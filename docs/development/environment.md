@@ -16,6 +16,7 @@ never commit it). The API and the Prisma CLI both read it. Real environment vari
 | `AUTH_MODE`           | no             | `development`                  | `development` or `sso`; development is refused in production          |
 | `CENTRAL_AUTH_*`      | later          | -                              | Pending platform contract                                             |
 | `DEV_AUTH_COMPANY_ID` | no             | `dev-company`                  | Company used by the dev auth adapter                                  |
+| `DEV_AUTH_ENABLED`    | no             | `false`                        | Explicit opt-in for the dev token adapter; also needs `NODE_ENV=development`. Refused in production |
 | `NEXT_PUBLIC_API_URL` | no             | `http://localhost:4000/api/v1` | API base URL for the browser (export it or use `apps/web/.env.local`) |
 
 ## Local database (native PostgreSQL 18, no Docker)
@@ -64,3 +65,18 @@ Requires team approval. Nothing here creates shared Project/Sales/Platform schem
 - `Invalid environment configuration` on API start: `DATABASE_URL` is missing.
 - Health `database: down`: PostgreSQL service stopped, or wrong credentials in `.env`.
 - Health `redis: not_configured`: expected when `REDIS_URL` is empty.
+
+## Development authentication and live API mode (local only)
+
+- API: the dev adapter (`dev:<externalId>`, exactly two segments, only the three provisioned ids) is built only
+  when `NODE_ENV=development` **and** `DEV_AUTH_ENABLED=true`. Any other non-production setting fails closed (no
+  token accepted); production refuses to start with it. Roles/permissions/company are never read from the token:
+  they come from the database membership (`/me`, `resolveTenant`).
+- Web: `/api/dev-session` (server route) returns a token for one of three persona keys (`hr`, `manager`,
+  `employee`) and is a 404 unless `NODE_ENV=development` and server-only `DEV_AUTH_ENABLED=true`.
+  The directory uses the live API only with `NEXT_PUBLIC_EMPLOYEES_ADAPTER=http` and `NEXT_PUBLIC_DEV_AUTH=true`
+  (development builds only). Production is always `http` and shows the "not available" notice; it never shows demo data.
+- Live browser tests: `pnpm --filter @gsc/web test:e2e:live` (config `apps/web/playwright.live.config.ts`) starts
+  its own API (port 4100) and web (port 3100) against local `hr_db`. Test employees are cleaned up by terminating
+  them (audit history is append-only); the foreign-company fixture is removed outright.
+- If Playwright's expected Chromium is not installed, set `PW_CHROMIUM_EXECUTABLE` to an installed Chromium.
