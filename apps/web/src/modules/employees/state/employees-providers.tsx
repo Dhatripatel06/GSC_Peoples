@@ -6,6 +6,8 @@ import { Alert } from '@/components/ui/alert';
 import { SelectField } from '@/components/ui/select';
 import { createDemoEmployeesService, createDemoStore } from '../adapters/demo/demo-service';
 import { DEMO_PERSONAS, type DemoPersonaKey } from '../adapters/demo/demo-sessions';
+import { devAuthClientAvailable, resolveEmployeesAdapter } from '@/lib/dev-auth/config';
+import { DevLiveEmployeesProviders } from './dev-live-providers';
 import { EmployeesContextProvider } from './employees-context';
 
 /**
@@ -13,9 +15,16 @@ import { EmployeesContextProvider } from './employees-context';
  * Demo data is the default for local development ONLY: a production build without an explicit
  * NEXT_PUBLIC_EMPLOYEES_ADAPTER never shows fictional people, it shows the "not available" notice.
  */
-export const EMPLOYEES_ADAPTER =
-  process.env.NEXT_PUBLIC_EMPLOYEES_ADAPTER ??
-  (process.env.NODE_ENV === 'production' ? 'http' : 'demo');
+export const EMPLOYEES_ADAPTER = resolveEmployeesAdapter({
+  NODE_ENV: process.env.NODE_ENV,
+  NEXT_PUBLIC_EMPLOYEES_ADAPTER: process.env.NEXT_PUBLIC_EMPLOYEES_ADAPTER,
+});
+
+/** Local development session against the real API. False in every production build. */
+const DEV_LIVE = devAuthClientAvailable({
+  NODE_ENV: process.env.NODE_ENV,
+  NEXT_PUBLIC_DEV_AUTH: process.env.NEXT_PUBLIC_DEV_AUTH,
+});
 
 const PERSONA_LABEL: Record<DemoPersonaKey, string> = {
   hr: 'HR Admin: all employees, can edit',
@@ -65,6 +74,7 @@ export function DemoEmployeesProviders({ children }: { children: React.ReactNode
 
 export function EmployeesProviders({ children }: { children: React.ReactNode }) {
   if (EMPLOYEES_ADAPTER === 'http') {
+    if (DEV_LIVE) return <DevLiveEmployeesProviders>{children}</DevLiveEmployeesProviders>;
     return (
       <Alert variant="warning" title="Live API mode is not available yet.">
         The real adapter needs a Central Authentication token source and a server endpoint that

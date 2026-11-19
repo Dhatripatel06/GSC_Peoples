@@ -19,6 +19,7 @@ import { createDepartmentsRouter } from './modules/departments/departments.route
 import { createEmployeeRepository, type TenantRunner } from './modules/employees/employees.repository';
 import { createEmployeesRouter } from './modules/employees/employees.routes';
 import { createEmployeeService } from './modules/employees/employees.service';
+import { createMeRouter } from './modules/me/me.routes';
 import { healthRouter } from './modules/health/health.routes';
 import { API_PREFIX } from './shared/constants';
 
@@ -62,6 +63,7 @@ export function createApp(deps: AppDependencies = {}): Express {
 
   // ... and feature routes also require a validated ACTIVE company membership (which company).
   const tenant = resolveTenant(resolveMembership);
+  api.use('/me', tenant, createMeRouter());
   api.use('/employees', tenant, createEmployeesRouter(createEmployeeService(createEmployeeRepository(tenantRunner))));
   api.use('/departments', tenant, createDepartmentsRouter(createDepartmentRepository(tenantRunner)));
 

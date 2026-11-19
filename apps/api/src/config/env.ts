@@ -33,8 +33,17 @@ const envSchema = z
     CENTRAL_AUTH_ISSUER: optionalString,
     CENTRAL_AUTH_AUDIENCE: optionalString,
     DEV_AUTH_COMPANY_ID: z.string().min(1).default('dev-company'),
+    /** Explicit opt-in for the local development token adapter. Never allowed in production. */
+    DEV_AUTH_ENABLED: z.preprocess(emptyToUndefined, z.enum(['true', 'false']).default('false')).transform((v) => v === 'true'),
   })
   .superRefine((env, ctx) => {
+    if (env.NODE_ENV === 'production' && env.DEV_AUTH_ENABLED) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['DEV_AUTH_ENABLED'],
+        message: 'DEV_AUTH_ENABLED is not allowed when NODE_ENV=production',
+      });
+    }
     if (env.NODE_ENV === 'production' && env.AUTH_MODE === 'development') {
       ctx.addIssue({
         code: 'custom',

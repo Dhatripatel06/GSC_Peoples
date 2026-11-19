@@ -71,3 +71,23 @@ DELETE FROM hr._prisma_migrations WHERE migration_name IN
 - Provisioned per test file in `hr_test`: two companies, users, roles with the registry's recommended
   permissions, ACTIVE / INVITED / SUSPENDED memberships, a disabled user, departments and employees.
 - Because it reads `migrations/`, deleting the superseded `candidate-migration*` folders cannot affect it.
+
+## Local provisioning (users, roles, memberships)
+
+`pnpm db:provision:local` (script `apps/api/scripts/provision-local.ts`, logic in
+`apps/api/src/database/provisioning/local-provisioning.ts`).
+
+- Runs as `hr_migrator` (`DIRECT_URL`) from the CLI only; never from the API or the browser.
+- Refuses any host other than localhost, any database other than `hr_db`/`hr_test`, and `NODE_ENV=production`.
+- Company id = `DEV_AUTH_COMPANY_ID` (default `dev-company`), so the dev auth adapter and the data agree.
+- Creates the 4 system roles with the registry default permissions, 2 departments, and 3 people
+  (`dev-hr-admin` HR_ADMIN, `dev-manager` MANAGER, `dev-employee` EMPLOYEE reporting to the manager), each with an
+  employee record and an ACTIVE membership.
+- Insert-only and idempotent (`ON CONFLICT DO NOTHING` on natural keys, one transaction): re-running creates
+  nothing and never overwrites later edits. Grants outside the registry defaults are reported, not removed.
+- Seeded employees are written directly, so they have no audit rows.
+- Dev tokens (only with `AUTH_MODE=development`): `Authorization: Bearer dev:dev-hr-admin` etc.
+  This is not Central Authentication; the SSO provider still fails closed.
+
+`GET /api/v1/me` returns the caller's user id, employee id, company, roles and permissions from the validated
+membership (contract: `packages/contracts/src/me.ts`).

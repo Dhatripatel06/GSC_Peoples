@@ -32,3 +32,4 @@ Thumbs.db
 
 # local infra data
 infrastructure/**/data/
+.next-live/

@@ -15,6 +15,7 @@
     "db:migrate": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
     "db:seed": "tsx src/database/seeds/index.ts",
+    "db:provision:local": "tsx scripts/provision-local.ts",
     "db:studio": "prisma studio",
     "test:integration": "vitest run --config vitest.integration.config.ts"
   },
