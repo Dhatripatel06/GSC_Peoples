@@ -34,6 +34,12 @@ export class NotFoundError extends AppError {
   }
 }
 
+export class ConflictError extends AppError {
+  constructor(message = 'Resource already exists', details?: unknown) {
+    super(409, 'CONFLICT', message, details);
+  }
+}
+
 export class NotImplementedError extends AppError {
   constructor(message = 'Not implemented') {
     super(501, 'NOT_IMPLEMENTED', message);

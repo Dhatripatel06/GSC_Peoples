@@ -22,8 +22,11 @@
     "db:generate": "pnpm --filter @gsc/api db:generate",
     "db:migrate": "pnpm --filter @gsc/api db:migrate",
     "db:seed": "pnpm --filter @gsc/api db:seed",
-    "infra:up": "docker compose up -d",
-    "infra:down": "docker compose down"
+    "db:setup": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/db/setup-local-db.ps1",
+    "redis:up": "docker compose up -d redis",
+    "redis:down": "docker compose stop redis",
+    "db:test:setup": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/db/setup-test-db.ps1",
+    "test:integration": "pnpm --filter @gsc/api test:integration"
   },
   "devDependencies": {
     "@gsc/config": "workspace:*",

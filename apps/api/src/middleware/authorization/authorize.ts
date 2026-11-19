@@ -18,3 +18,12 @@ export const requirePermission =
     if (!permissions.every((p) => req.user!.permissions.includes(p))) throw new ForbiddenError();
     next();
   };
+
+/** Requires the user to hold at least one of the given permissions. Run after resolveTenant. */
+export const requireAnyPermission =
+  (...permissions: string[]): RequestHandler =>
+  (req, _res, next) => {
+    if (!req.user) throw new UnauthorizedError();
+    if (!permissions.some((p) => req.user!.permissions.includes(p))) throw new ForbiddenError();
+    next();
+  };

@@ -11,11 +11,12 @@
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "db:generate": "prisma generate",
+    "db:generate": "prisma generate && tsx scripts/gen-tenant-meta.ts",
     "db:migrate": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
     "db:seed": "tsx src/database/seeds/index.ts",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "test:integration": "vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {
     "@gsc/contracts": "workspace:*",

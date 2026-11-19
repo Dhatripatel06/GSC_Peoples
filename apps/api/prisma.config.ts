@@ -12,7 +12,9 @@ export default defineConfig({
     seed: 'tsx src/database/seeds/index.ts',
   },
   datasource: {
+    // The Prisma CLI (migrate, studio) uses the migration role when DIRECT_URL is set;
+    // the running API always uses DATABASE_URL (see src/database/client.ts).
     // Empty when unset so `prisma generate` works without a database.
-    url: process.env.DATABASE_URL ?? '',
+    url: process.env.DIRECT_URL || process.env.DATABASE_URL || '',
   },
 });

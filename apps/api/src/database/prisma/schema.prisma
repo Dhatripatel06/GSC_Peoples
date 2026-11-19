@@ -1,8 +1,12 @@
 // HR database (hr_db). Independent from the Project and Sales databases.
 //
-// DATA OWNERSHIP RULE: every HR table added later MUST carry a non-null
-// `companyId` referencing `Company`, and every query MUST filter by it.
-// Only the tenancy root is defined here; the HR schema comes in later tasks.
+// DATA OWNERSHIP RULE: every HR table EXCEPT `User` carries a non-null `companyId`
+// referencing `Company`, and every query MUST filter by it. `User` is the deliberate
+// global identity record (maps to Grow Spark Central Authentication; no credentials).
+//
+// CROSS-COMPANY INTEGRITY: every reference between company-owned tables is a composite
+// foreign key (companyId, xId) -> target (companyId, id), so a row can never point at
+// another company's row, even if application code has a bug.
 
 generator client {
   provider = "prisma-client"
@@ -13,11 +17,203 @@ datasource db {
   provider = "postgresql"
 }
 
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum MembershipStatus {
+  INVITED
+  ACTIVE
+  SUSPENDED
+  REVOKED
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  INTERN
+}
+
+enum EmploymentStatus {
+  ONBOARDING
+  ACTIVE
+  ON_LEAVE
+  TERMINATED
+}
+
+enum EmployeeAuditAction {
+  CREATED
+  UPDATED
+  DEPARTMENT_CHANGED
+  MANAGER_CHANGED
+  STATUS_CHANGED
+}
+
 model Company {
   id        String   @id @default(uuid())
   name      String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  memberships     CompanyMembership[]
+  roles           Role[]
+  rolePermissions RolePermission[]
+  departments     Department[]
+  employees       Employee[]
+  employeeAudits  EmployeeAuditLog[]
+
   @@map("companies")
+}
+
+// Global identity (no companyId). If multiple identity providers are ever supported,
+// replace `externalId @unique` with `@@unique([issuer, externalId])` (additive migration).
+model User {
+  id          String     @id @default(uuid())
+  externalId  String     @unique // subject id issued by Central Authentication
+  email       String // cached from the identity provider, not authoritative
+  name        String?
+  status      UserStatus @default(ACTIVE)
+  lastLoginAt DateTime?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  memberships    CompanyMembership[]
+  employeeAudits EmployeeAuditLog[]
+
+  @@index([email])
+  @@map("users")
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  companyId   String
+  key         String // SUPER_ADMIN | HR_ADMIN | MANAGER | EMPLOYEE (company-level roles)
+  name        String
+  description String?
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company     Company             @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  permissions RolePermission[]
+  memberships CompanyMembership[]
+
+  @@unique([companyId, id])
+  @@unique([companyId, key])
+  @@map("roles")
+}
+
+model RolePermission {
+  id         String   @id @default(uuid())
+  companyId  String
+  roleId     String
+  permission String // from the code-defined registry, e.g. "employee:read:team"
+  createdAt  DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  role    Role    @relation(fields: [companyId, roleId], references: [companyId, id], onDelete: Cascade, onUpdate: Restrict)
+
+  @@unique([companyId, roleId, permission])
+  @@map("role_permissions")
+}
+
+model Department {
+  id          String   @id @default(uuid())
+  companyId   String
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company   Company    @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  employees Employee[]
+
+  @@unique([companyId, id])
+  @@unique([companyId, name])
+  @@map("departments")
+}
+
+model CompanyMembership {
+  id         String           @id @default(uuid())
+  companyId  String
+  userId     String
+  roleId     String
+  employeeId String? // this user's own employee profile in this company, if any
+  status     MembershipStatus @default(INVITED)
+  invitedAt  DateTime         @default(now())
+  joinedAt   DateTime?
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  company  Company   @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  user     User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  role     Role      @relation(fields: [companyId, roleId], references: [companyId, id], onDelete: Restrict, onUpdate: Restrict)
+  employee Employee? @relation(fields: [companyId, employeeId], references: [companyId, id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([companyId, userId]) // one membership per user per company
+  @@unique([companyId, employeeId]) // an employee profile maps to at most one user
+  @@index([userId]) // "which companies does this user belong to"
+  @@index([companyId, roleId]) // members by role + FK support
+  @@map("company_memberships")
+}
+
+model Employee {
+  id              String           @id @default(uuid())
+  companyId       String
+  employeeNumber  String
+  firstName       String
+  lastName        String
+  workEmail       String?
+  jobTitle        String?
+  employmentType  EmploymentType   @default(FULL_TIME)
+  status          EmploymentStatus @default(ONBOARDING)
+  hireDate        DateTime?        @db.Date
+  terminationDate DateTime?        @db.Date
+  departmentId    String?
+  managerId       String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  company    Company            @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  department Department?        @relation(fields: [companyId, departmentId], references: [companyId, id], onDelete: Restrict, onUpdate: Restrict)
+  manager    Employee?          @relation("ReportingLine", fields: [companyId, managerId], references: [companyId, id], onDelete: Restrict, onUpdate: Restrict)
+  reports    Employee[]         @relation("ReportingLine")
+  membership CompanyMembership?
+  auditLogs  EmployeeAuditLog[]
+
+  @@unique([companyId, id])
+  @@unique([companyId, employeeNumber])
+  @@unique([companyId, workEmail])
+  @@index([companyId, departmentId])
+  @@index([companyId, managerId])
+  @@index([companyId, status])
+  @@index([companyId, lastName, firstName])
+  @@map("employees")
+}
+
+// Append-only record of changes to employee records (create, edit, department/manager
+// assignment, status change). Company-owned: carries companyId and a composite FK to the employee.
+// `changes` holds { field: { from, to } } for fields that exist in `Employee` only.
+// Never updated or deleted by the application (the candidate migration revokes UPDATE/DELETE).
+model EmployeeAuditLog {
+  id          String              @id @default(uuid())
+  companyId   String
+  employeeId  String
+  actorUserId String
+  action      EmployeeAuditAction
+  changes     Json
+  createdAt   DateTime            @default(now())
+
+  company  Company  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  employee Employee @relation(fields: [companyId, employeeId], references: [companyId, id], onDelete: Restrict, onUpdate: Restrict)
+  actor    User     @relation(fields: [actorUserId], references: [id], onDelete: Restrict)
+
+  @@unique([companyId, id])
+  @@index([companyId, employeeId, createdAt])
+  @@index([companyId, createdAt])
+  @@index([actorUserId])
+  @@map("employee_audit_logs")
 }

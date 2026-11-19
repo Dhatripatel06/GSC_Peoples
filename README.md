@@ -25,7 +25,8 @@ apps/api         Express API (Prisma, BullMQ)
 packages/shared  Shared TS utilities, common types, validation helpers
 packages/contracts  API + domain-event contracts (Zod)
 packages/config  Shared tsconfig + ESLint config
-infrastructure/  Docker-related files (Postgres init scripts, etc.)
+infrastructure/  Docker-related files (Redis only; PostgreSQL is native)
+scripts/db/      Local database setup (roles, hr_db, hr schema)
 docs/            Architecture, API and development docs
 ```
 
@@ -33,14 +34,15 @@ docs/            Architecture, API and development docs
 
 - Node.js >= 22
 - pnpm >= 10 (`npm i -g pnpm@10`)
-- Docker (optional, for local PostgreSQL + Redis)
+- PostgreSQL 18 running natively on localhost:5432
+- Redis (native, or `pnpm redis:up` via Docker; optional)
 
 ## Quick start
 
 ```bash
 pnpm install
 cp .env.example .env          # then fill in the blanks (see docs/development/environment.md)
-pnpm infra:up                 # PostgreSQL + Redis via Docker (optional if you run your own)
+pnpm db:setup                  # one-time: roles, hr_db, hr schema, writes .env URLs
 pnpm db:generate              # generate Prisma client
 pnpm db:migrate               # create/apply migrations in hr_db
 pnpm dev                      # web on :3000, API on :4000
@@ -62,7 +64,8 @@ pnpm dev                      # web on :3000, API on :4000
 | `pnpm db:generate`             | Generate Prisma client                                                 |
 | `pnpm db:migrate`              | Create/apply dev migrations                                            |
 | `pnpm db:seed`                 | Run seeds                                                              |
-| `pnpm infra:up` / `infra:down` | Start/stop Docker Postgres + Redis                                     |
+| `pnpm db:setup`                | One-time local DB/roles setup on native PostgreSQL                     |
+| `pnpm redis:up` / `redis:down` | Start/stop optional Redis container                                    |
 | `pnpm format`                  | Prettier                                                               |
 
 ## Without Redis or Docker
