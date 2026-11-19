@@ -1,0 +1,23 @@
+// HR database (hr_db). Independent from the Project and Sales databases.
+//
+// DATA OWNERSHIP RULE: every HR table added later MUST carry a non-null
+// `companyId` referencing `Company`, and every query MUST filter by it.
+// Only the tenancy root is defined here; the HR schema comes in later tasks.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Company {
+  id        String   @id @default(uuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("companies")
+}
