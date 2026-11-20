@@ -14,8 +14,8 @@ import { hashPassword } from '../auth/password';
  * CSRF. Nothing is mocked. The app is pointed at hr_test BEFORE its modules load.
  *
  *  - Super Admin: everything.
- *  - HR Admin: list accounts; invite and resend for Manager/Employee; activate/deactivate any account
- *    that is not a Super Admin. Never role changes, company settings, audit log, HR/SA invitations.
+ *  - HR Admin: list accounts; invite, resend and activate/deactivate for Manager/Employee only. Never
+ *    anything on an HR Admin or Super Admin account, role changes, company settings or the audit log.
  *  - Manager / Employee: nothing under /settings.
  */
 
@@ -218,6 +218,54 @@ describe('HR Admin: the limits', () => {
     expect(await auditActions()).toEqual([]);
   });
 
+  it('cannot deactivate another HR Admin or itself: only a Super Admin can, and nothing changes or is audited', async () => {
+    const otherHr = await seedUser('hr2@example.com', COMPANY_A, 'HR_ADMIN');
+    const hr = await login('hr');
+    const otherSession = await login('hr'); // a live session of the acting HR, to prove it survives
+    for (const target of [otherHr.membershipId, seeded.hr.membershipId]) {
+      expect((await send('patch', hr, `/settings/users/${target}/status`, { status: 'DISABLED' })).status).toBe(403);
+    }
+    const { rows } = await admin.query(
+      `SELECT u.status AS user_status, m.status AS membership_status FROM hr.users u JOIN hr.company_memberships m ON m."userId"=u.id WHERE m.id = ANY($1)`,
+      [[otherHr.membershipId, seeded.hr.membershipId]],
+    );
+    expect(rows).toEqual([
+      { user_status: 'ACTIVE', membership_status: 'ACTIVE' },
+      { user_status: 'ACTIVE', membership_status: 'ACTIVE' },
+    ]);
+    expect((await get(otherSession, '/me')).status).toBe(200);
+    expect(await auditActions()).toEqual([]);
+  });
+
+  it('cannot resend a pending Super Admin invitation, or invite a Super Admin or HR Admin even with a role string in another case or shape', async () => {
+    const sa = await login('sa');
+    const hr = await login('hr');
+    const pendingSa = await send('post', sa, '/settings/users/invite', { email: 'newsa@example.com', roleKey: 'SUPER_ADMIN' });
+    expect(pendingSa.status).toBe(201);
+    const before = await auditActions();
+    expect((await send('post', hr, `/settings/users/${pendingSa.body.data.membershipId}/invitations/resend`)).status).toBe(403);
+    for (const roleKey of ['super_admin', 'SUPER_ADMIN ', ['SUPER_ADMIN'], { key: 'SUPER_ADMIN' }]) {
+      const res = await send('post', hr, '/settings/users/invite', { email: 'sneaky@example.com', roleKey });
+      expect(res.status, JSON.stringify(roleKey)).toBe(400); // schema rejects anything but the exact enum
+    }
+    expect((await admin.query(`SELECT count(*)::int n FROM hr.users WHERE email = 'sneaky@example.com'`)).rows[0].n).toBe(0);
+    expect(await auditActions()).toEqual(before); // refused attempts add no audit rows
+  });
+
+  it("cannot reach another company's HR Admin or Super Admin: not found, unchanged", async () => {
+    const foreignHr = await seedUser('foreign.hr@example.com', COMPANY_B, 'HR_ADMIN');
+    const foreignSa = await seedUser('foreign.sa@example.com', COMPANY_B, 'SUPER_ADMIN');
+    const hr = await login('hr');
+    for (const target of [foreignHr.membershipId, foreignSa.membershipId]) {
+      expect((await send('patch', hr, `/settings/users/${target}/status`, { status: 'DISABLED' })).status).toBe(409);
+      expect((await send('post', hr, `/settings/users/${target}/invitations/resend`)).status).toBe(409);
+      expect((await send('patch', hr, `/settings/users/${target}/role`, { roleKey: 'EMPLOYEE' })).status).toBe(403);
+    }
+    const { rows } = await admin.query(`SELECT status FROM hr.company_memberships WHERE id = ANY($1)`, [[foreignHr.membershipId, foreignSa.membershipId]]);
+    expect(rows).toEqual([{ status: 'ACTIVE' }, { status: 'ACTIVE' }]);
+    expect(await auditActions(COMPANY_B)).toEqual([]);
+  });
+
   it('cannot change roles, read or change company settings, or read the audit log', async () => {
     const hr = await login('hr');
     expect((await send('patch', hr, `/settings/users/${seeded.emp.membershipId}/role`, { roleKey: 'SUPER_ADMIN' })).status).toBe(403);
@@ -254,6 +302,15 @@ describe('Super Admin keeps full control', () => {
     const logs = await get(sa, '/settings/audit-logs');
     expect(logs.status).toBe(200);
     expect((logs.body.data as { action: string }[]).map((l) => l.action).sort()).toEqual(['INVITED', 'ROLE_CHANGED']);
+  });
+
+  it('deactivates and reactivates an HR Admin (audited), which HR itself may not do', async () => {
+    const sa = await login('sa');
+    const hr = await login('hr'); // the target's live session must die when it is deactivated
+    expect((await send('patch', sa, `/settings/users/${seeded.hr.membershipId}/status`, { status: 'DISABLED' })).status).toBe(200);
+    expect((await get(hr, '/me')).status).toBe(401);
+    expect((await send('patch', sa, `/settings/users/${seeded.hr.membershipId}/status`, { status: 'ACTIVE' })).status).toBe(200);
+    expect(await auditActions()).toEqual(['DISABLED', 'ACTIVATED']);
   });
 
   it('the last Super Admin still cannot be disabled', async () => {

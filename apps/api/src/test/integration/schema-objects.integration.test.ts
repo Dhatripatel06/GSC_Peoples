@@ -1,6 +1,6 @@
 import type pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { connect, failure } from './helpers';
+import { bindTenant, connect, failure } from './helpers';
 import { insertCompany, insertEmployee, resetData } from './seed';
 
 let admin: pg.Client;
@@ -9,6 +9,7 @@ let app: pg.Client;
 beforeAll(async () => {
   admin = await connect('TEST_DIRECT_URL');
   app = await connect('TEST_DATABASE_URL');
+  await bindTenant(app, 'c1'); // RLS: hr_app sees and writes only the tenant it is bound to
 });
 afterAll(async () => {
   await app.end();
@@ -34,7 +35,7 @@ const q = async <T extends object>(sql: string, params: unknown[] = []) =>
   (await admin.query<T>(sql, params)).rows;
 
 describe('pg_constraint: CHECK constraints', () => {
-  it('exactly the eight expected CHECK constraints exist, validated, with the intended expressions', async () => {
+  it('exactly the nine expected CHECK constraints exist, validated, with the intended expressions', async () => {
     const rows = await q<{ conrelid: string; conname: string; def: string; convalidated: boolean }>(
       `SELECT conrelid::regclass::text AS conrelid, conname, pg_get_constraintdef(oid) AS def, convalidated
        FROM pg_constraint WHERE connamespace = 'hr'::regnamespace AND contype = 'c' ORDER BY conname`,
@@ -47,6 +48,7 @@ describe('pg_constraint: CHECK constraints', () => {
       'employees_terminated_requires_termination_date',
       'employees_termination_after_hire',
       'employees_work_email_normalized',
+      'holidays_name_not_blank',
       'users_email_normalized',
     ]);
     expect(rows.every((r) => r.convalidated)).toBe(true);
@@ -121,6 +123,7 @@ describe('pg_trigger / pg_proc: manager-cycle trigger', () => {
 
   it('works for a session whose search_path does NOT include hr (qualification, not luck)', async () => {
     const c = await connect('TEST_DATABASE_URL');
+    await bindTenant(c, 'c1');
     try {
       const { rows } = await c.query('SHOW search_path');
       expect(rows[0].search_path).not.toMatch(/\bhr\b/);

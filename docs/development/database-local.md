@@ -80,12 +80,16 @@ DELETE FROM hr._prisma_migrations WHERE migration_name IN
 - Runs as `hr_migrator` (`DIRECT_URL`) from the CLI only; never from the API or the browser.
 - Refuses any host other than localhost, any database other than `hr_db`/`hr_test`, and `NODE_ENV=production`.
 - Company id = `DEV_AUTH_COMPANY_ID` (default `dev-company`), so the dev auth adapter and the data agree.
-- Creates the 4 system roles with the registry default permissions, 2 departments, and 3 people
-  (`dev-hr-admin` HR_ADMIN, `dev-manager` MANAGER, `dev-employee` EMPLOYEE reporting to the manager), each with an
+- Creates the 4 system roles with the registry default permissions, 2 departments, and 4 people
+  (`dev-super-admin` SUPER_ADMIN `sam.superadmin@dev.local`, `dev-hr-admin` HR_ADMIN, `dev-manager` MANAGER, `dev-employee` EMPLOYEE reporting to the manager), each with an
   employee record and an ACTIVE membership.
 - Insert-only and idempotent (`ON CONFLICT DO NOTHING` on natural keys, one transaction): re-running creates
   nothing and never overwrites later edits. Grants outside the registry defaults are reported, not removed.
 - Seeded employees are written directly, so they have no audit rows.
+- Login passwords: `pnpm db:provision:local --set-password <email> [--set-password <email>]` sets the password of an
+  existing provisioned persona (hidden prompt + confirmation, never an argument). It provisions nothing, updates only
+  `users."passwordHash"` (same `hashPassword` as login), and applies the same localhost / `hr_db`|`hr_test` /
+  non-production guards. Never prints a password or hash. Passwords are 10-128 characters.
 - Dev tokens (only with `AUTH_MODE=development`): `Authorization: Bearer dev:dev-hr-admin` etc.
   This is not Central Authentication; the SSO provider still fails closed.
 

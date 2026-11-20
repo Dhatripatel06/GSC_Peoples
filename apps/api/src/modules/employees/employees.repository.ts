@@ -8,6 +8,7 @@ import type { Prisma } from '../../database/generated/client';
 import type { TenantDb } from '../../database/tenant';
 import type { TenantContext } from '../../database/tenant/types';
 import { ConflictError, NotFoundError, ValidationError } from '../../shared/errors';
+import { resolveTeamEmployeeIds } from '../authorization/team-scope';
 import type {
   Actor,
   EmployeePage,
@@ -75,11 +76,18 @@ const toDate = (v: string | null | undefined): Date | null | undefined =>
   v === undefined ? undefined : v === null ? null : new Date(`${v}T00:00:00.000Z`);
 const isoDay = (d: Date | null): string | null => (d ? d.toISOString().slice(0, 10) : null);
 
-function scopeWhere(scope: ReadScope): Obj[] | 'none' {
+/**
+ * Row filter for the caller's read scope. `team` is direct AND indirect reports (PRD section 5),
+ * resolved from the reporting line inside the caller's company on the same transaction.
+ */
+async function scopeWhere(db: TenantDb, scope: ReadScope): Promise<Obj[] | 'none'> {
   if (scope.kind === 'all') return [];
   if (!scope.employeeId) return 'none'; // no linked employee profile: nothing is in team/self scope
   const any: Obj[] = [];
-  if (scope.team) any.push({ managerId: scope.employeeId }); // direct reports only
+  if (scope.team) {
+    const teamIds = await resolveTeamEmployeeIds(db, scope.employeeId);
+    if (teamIds.length > 0) any.push({ id: { in: teamIds } });
+  }
   if (scope.self) any.push({ id: scope.employeeId });
   return any.length > 0 ? [{ OR: any }] : 'none';
 }
@@ -183,9 +191,6 @@ export function createEmployeeRepository(run: TenantRunner): EmployeeRepository 
   return {
     async list(ctx, scope, query: EmployeeListQuery): Promise<EmployeePage> {
       const and: Obj[] = [];
-      const scoped = scopeWhere(scope);
-      if (scoped === 'none') return { rows: [], nextCursor: null };
-      and.push(...scoped);
 
       for (const token of (query.q ?? '').split(/\s+/).filter(Boolean)) {
         const c = { contains: escapeLike(token), mode: 'insensitive' } as const;
@@ -209,8 +214,10 @@ export function createEmployeeRepository(run: TenantRunner): EmployeeRepository 
       }
 
       return run(ctx, async (db) => {
+        const scoped = await scopeWhere(db, scope);
+        if (scoped === 'none') return { rows: [], nextCursor: null };
         const found = (await db.employee.findMany({
-          where: { AND: and },
+          where: { AND: [...scoped, ...and] },
           orderBy: [...ORDER],
           take: query.limit + 1,
           select: SELECT,
@@ -225,9 +232,9 @@ export function createEmployeeRepository(run: TenantRunner): EmployeeRepository 
     },
 
     async get(ctx, scope, id) {
-      const scoped = scopeWhere(scope);
-      if (scoped === 'none') return null;
       return run(ctx, async (db) => {
+        const scoped = await scopeWhere(db, scope);
+        if (scoped === 'none') return null;
         const row = await db.employee.findFirst({
           where: { AND: [{ id }, ...scoped] },
           select: SELECT,

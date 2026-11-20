@@ -1,6 +1,12 @@
-import { DEV_EXTERNAL_IDS } from '@gsc/contracts';
 import { UnauthorizedError } from '../../shared/errors';
 import type { CentralAuthProvider, VerifiedIdentity } from './types';
+
+/**
+ * The fixed identities created by `pnpm db:provision:local`. Kept server-side on purpose: this list used
+ * to live in the shared contracts package, which the web app bundles, and it leaked persona ids into
+ * production client bundles.
+ */
+const DEV_EXTERNAL_IDS: readonly string[] = ['dev-super-admin', 'dev-hr-admin', 'dev-manager', 'dev-employee'];
 
 /**
  * LOCAL DEVELOPMENT ONLY - not an authentication system and not SSO.

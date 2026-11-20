@@ -170,12 +170,12 @@ describe('Employee API', () => {
   });
 
   describe('read scope', () => {
-    it('manager sees direct reports and self only (not grand-reports, peers or HR)', async () => {
+    it('manager sees direct AND indirect reports and self only (PRD section 5; not peers or HR)', async () => {
       const res = await get(mgr, '/employees?limit=100');
-      expect(lastNames(res)).toEqual(['Manager', 'Reddy', 'Singh']);
+      expect(lastNames(res)).toEqual(['Grand', 'Manager', 'Reddy', 'Singh']);
       expect((await get(mgr, `/employees/${s.r1.id}`)).status).toBe(200);
       expect((await get(mgr, `/employees/${s.mgr.id}`)).status).toBe(200);
-      expect((await get(mgr, `/employees/${s.grand.id}`)).status).toBe(404);
+      expect((await get(mgr, `/employees/${s.grand.id}`)).status).toBe(200); // grand-report: indirect
       expect((await get(mgr, `/employees/${s.peer.id}`)).status).toBe(404);
     });
 
@@ -397,9 +397,9 @@ describe('Employee API', () => {
       expect(res.body.data.every((d: { id: string }) => d.id !== s.deptB.id)).toBe(true);
     });
 
-    it('403 for users without read-all or write', async () => {
-      expect((await get(emp, '/departments')).status).toBe(403);
-      expect((await get(mgr, '/departments')).status).toBe(403);
+    it('every role may view departments (PRD ORG-002); a caller with no org permission gets 403', async () => {
+      expect((await get(emp, '/departments')).status).toBe(200);
+      expect((await get(mgr, '/departments')).status).toBe(200);
     });
   });
 

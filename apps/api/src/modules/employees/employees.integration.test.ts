@@ -166,14 +166,19 @@ describe('company and permissions come from real membership rows', () => {
     expect((await call('get', 'u-mgr', '/employees')).status).toBe(200);
   });
 
-  it('permission strings outside the registry grant nothing', async () => {
+  it('unknown role keys grant nothing (fail closed), whatever permission rows they carry', async () => {
     expect((await call('get', 'u-bogus', '/employees')).status).toBe(403);
+    expect((await call('get', 'u-hr-nostatus', '/employees')).status).toBe(403); // role key HR_NOSTATUS is not one of the four
   });
 
-  it('removing a permission row removes the access (permissions are read per request)', async () => {
-    expect((await call('post', 'u-hr', '/employees', { employeeNumber: 'EMP-050', firstName: 'A', lastName: 'B' })).status).toBe(201);
+  it('permissions are code-defined per role (PRD SET-003): role_permissions rows neither grant nor revoke', async () => {
+    const body = (n: string) => ({ employeeNumber: n, firstName: 'A', lastName: 'B' });
+    // revoking the row does not remove HR's access ...
     await admin.query(`DELETE FROM hr.role_permissions WHERE "roleId"='HR-cA' AND permission=$1`, [P.EMPLOYEE_WRITE]);
-    expect((await call('post', 'u-hr', '/employees', { employeeNumber: 'EMP-051', firstName: 'A', lastName: 'B' })).status).toBe(403);
+    expect((await call('post', 'u-hr', '/employees', body('EMP-050'))).status).toBe(201);
+    // ... and adding a row does not give an Employee write access.
+    await admin.query('INSERT INTO hr.role_permissions (id, "companyId", "roleId", permission) VALUES ($1,$2,$3,$4)', [randomUUID(), A, 'EMP-cA', P.EMPLOYEE_WRITE]);
+    expect((await call('post', 'u-emp', '/employees', body('EMP-051'))).status).toBe(403);
   });
 });
 
@@ -185,11 +190,11 @@ describe('role views (real API responses)', () => {
     expect(res.body.data.map((e: any) => e.id)).not.toContain(ID.bob);
   });
 
-  it('Manager: direct reports and self only; others are 404', async () => {
+  it('Manager: direct and indirect reports and self only (PRD section 5); others are 404', async () => {
     const res = await call('get', 'u-mgr', '/employees?limit=100');
-    expect(lastNames(res)).toEqual(['Manager', 'Reddy', 'Singh']);
+    expect(lastNames(res)).toEqual(['Grand', 'Manager', 'Reddy', 'Singh']);
     expect((await call('get', 'u-mgr', `/employees/${ID.r1}`)).status).toBe(200);
-    expect((await call('get', 'u-mgr', `/employees/${ID.grand}`)).status).toBe(404);
+    expect((await call('get', 'u-mgr', `/employees/${ID.grand}`)).status).toBe(200); // grand-report
     expect((await call('get', 'u-mgr', `/employees/${ID.peer}`)).status).toBe(404);
   });
 
@@ -198,21 +203,21 @@ describe('role views (real API responses)', () => {
     expect((await call('get', 'u-emp', `/employees/${ID.hr}`)).status).toBe(404);
   });
 
-  it('only HR may write; status needs its own permission; managers and employees get 403', async () => {
+  it('only SA/HR may write or change status; managers and employees get 403', async () => {
     const body = { employeeNumber: 'EMP-060', firstName: 'A', lastName: 'B' };
     expect((await call('post', 'u-mgr', '/employees', body)).status).toBe(403);
     expect((await call('post', 'u-emp', '/employees', body)).status).toBe(403);
     expect((await call('patch', 'u-emp', `/employees/${ID.eve}`, { jobTitle: 'CEO' })).status).toBe(403);
-    expect((await call('put', 'u-hr-nostatus', `/employees/${ID.r1}/status`, { status: 'ON_LEAVE' })).status).toBe(403);
+    expect((await call('put', 'u-mgr', `/employees/${ID.r1}/status`, { status: 'ON_LEAVE' })).status).toBe(403);
     expect((await call('put', 'u-hr', `/employees/${ID.r1}/status`, { status: 'ON_LEAVE' })).status).toBe(200);
     const stored = await admin.query('SELECT "jobTitle" FROM hr.employees WHERE id=$1', [ID.eve]);
     expect(stored.rows[0].jobTitle).toBeNull();
   });
 
-  it('departments: only the caller company; 403 without read-all or write', async () => {
+  it('departments: only the caller company; every role may view', async () => {
     const res = await call('get', 'u-hr', '/departments');
     expect(res.body.data.map((d: any) => d.name)).toEqual(['Engineering', 'Sales']);
-    expect((await call('get', 'u-emp', '/departments')).status).toBe(403);
+    expect((await call('get', 'u-emp', '/departments')).status).toBe(200); // PRD ORG-002: every role may view
   });
 });
 

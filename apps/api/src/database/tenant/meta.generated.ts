@@ -44,6 +44,10 @@ export const tenantMeta: TenantMeta = {
       "auditLogs": {
         "target": "AuditLog",
         "list": true
+      },
+      "holidays": {
+        "target": "Holiday",
+        "list": true
       }
     }
   },
@@ -242,6 +246,15 @@ export const tenantMeta: TenantMeta = {
       },
       "actor": {
         "target": "User",
+        "list": false
+      }
+    }
+  },
+  "Holiday": {
+    "hasCompanyId": true,
+    "relations": {
+      "company": {
+        "target": "Company",
         "list": false
       }
     }

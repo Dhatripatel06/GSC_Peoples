@@ -1,3 +1,4 @@
+import { permissionsForRole } from '@gsc/contracts';
 import { normalizeEmail } from '@gsc/shared';
 import type { PrismaClient } from './generated/client';
 
@@ -28,7 +29,7 @@ export function createIdentityStore(prisma: PrismaClient) {
 
     /**
      * Validates that the Central Authentication subject is an ACTIVE user with an ACTIVE
-     * membership in `companyId`, and returns the role and permissions granted in THAT company.
+     * membership in `companyId`, and returns the role (and the code-defined permissions for that role) granted in THAT company.
      * Returns null when any link is missing, so callers fail closed. `companyId` must come from the
      * verified token claims, never from request input.
      */
@@ -44,7 +45,7 @@ export function createIdentityStore(prisma: PrismaClient) {
         select: {
           id: true,
           employeeId: true,
-          role: { select: { key: true, permissions: { select: { permission: true } } } },
+          role: { select: { key: true } },
         },
       });
       if (!membership) return null;
@@ -54,7 +55,8 @@ export function createIdentityStore(prisma: PrismaClient) {
         membershipId: membership.id,
         employeeId: membership.employeeId,
         roleKey: membership.role.key,
-        permissions: membership.role.permissions.map((p) => p.permission),
+        // PRD SET-003: permissions are defined in code per role key. `role_permissions` rows are not read.
+        permissions: permissionsForRole(membership.role.key),
       };
     },
   };

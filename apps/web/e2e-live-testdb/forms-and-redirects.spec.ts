@@ -50,7 +50,7 @@ function recorder(page: Page) {
 async function signIn(page: Page, email: string, password: string) {
   await page.goto('/login');
   await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Password').fill(password);
+  await page.getByLabel('Password', { exact: true }).fill(password);
   await page.getByRole('button', { name: 'Sign in' }).click(); // auto-waits until hydrated (enabled)
 }
 
@@ -179,10 +179,10 @@ test.describe('reset password', () => {
     // Old password fails, new password works through the real login form.
     await context.clearCookies();
     await page.getByLabel('Email').fill(HR.email);
-    await page.getByLabel('Password').fill(PASSWORD);
+    await page.getByLabel('Password', { exact: true }).fill(PASSWORD);
     await page.getByRole('button', { name: 'Sign in' }).click();
     await expect(formAlert(page)).toContainText('Invalid email or password');
-    await page.getByLabel('Password').fill(next);
+    await page.getByLabel('Password', { exact: true }).fill(next);
     await page.getByRole('button', { name: 'Sign in' }).click();
     await expect(page).toHaveURL(/\/dashboard$/, { timeout: 30_000 });
 
@@ -214,17 +214,17 @@ test.describe('accept invitation', () => {
 
     // Bad token.
     await invitee.goto(`/accept-invitation?token=${'y'.repeat(43)}`);
-    await invitee.getByLabel('Password').fill(secret);
+    await invitee.getByLabel('Password', { exact: true }).fill(secret);
     await invitee.getByRole('button', { name: 'Activate account' }).click();
     await expect(formAlert(invitee)).toContainText('invalid, expired, or already used');
     // Too-short password with a good token: refused, token not consumed.
     await invitee.goto(`/accept-invitation?token=${token}`);
-    await invitee.getByLabel('Password').fill('tooshort1');
+    await invitee.getByLabel('Password', { exact: true }).fill('tooshort1');
     await invitee.getByRole('button', { name: 'Activate account' }).click();
     await expect(formAlert(invitee)).toContainText('Invalid invitation fields');
 
     // Good token and password: account activates and a session cookie is issued.
-    await invitee.getByLabel('Password').fill(secret);
+    await invitee.getByLabel('Password', { exact: true }).fill(secret);
     await invitee.getByRole('button', { name: 'Activate account' }).click();
     await expect(invitee).toHaveURL(/\/dashboard$/, { timeout: 30_000 });
     const cookies = await inviteeCtx.cookies(API);
@@ -259,7 +259,7 @@ test.describe('redirect safety (real navigation)', () => {
       await context.clearCookies();
       await page.goto(`/login?next=${encodeURIComponent(attack)}`);
       await page.getByLabel('Email').fill(HR.email);
-      await page.getByLabel('Password').fill(PASSWORD);
+      await page.getByLabel('Password', { exact: true }).fill(PASSWORD);
       await page.getByRole('button', { name: 'Sign in' }).click();
       await expect(page).toHaveURL(`${WEB}/dashboard`, { timeout: 30_000 });
       // No request may ever go to the attacker's host (the /login?next=... URL itself merely contains the text).
@@ -270,7 +270,7 @@ test.describe('redirect safety (real navigation)', () => {
   test('a valid internal path keeps its query and hash', async ({ page }) => {
     await page.goto(`/login?next=${encodeURIComponent('/employees?q=Mia#results')}`);
     await page.getByLabel('Email').fill(HR.email);
-    await page.getByLabel('Password').fill(PASSWORD);
+    await page.getByLabel('Password', { exact: true }).fill(PASSWORD);
     await page.getByRole('button', { name: 'Sign in' }).click();
     await expect(page).toHaveURL(`${WEB}/employees?q=Mia#results`, { timeout: 30_000 });
   });
@@ -285,7 +285,12 @@ test.describe('redirect safety (real navigation)', () => {
         expect(target.pathname, p).toBe('/login');
       } else {
         expect([308, 404]).toContain(res.status()); // framework normalisation or not found, never off-site
-        if (location) expect(location, p).not.toMatch(/evil\.example/);
+        if (location) {
+          // A path that merely contains the word is fine (`//evil.example` is normalised to the
+          // same-origin path `/evil.example/...`); what must never happen is leaving our origin.
+          expect(location, p).not.toMatch(/^(\/\/|\/\\|\\)/); // never protocol-relative
+          expect(new URL(location, WEB).origin, p).toBe(WEB);
+        }
       }
     }
   });

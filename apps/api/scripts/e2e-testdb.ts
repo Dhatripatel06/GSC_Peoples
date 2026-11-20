@@ -89,9 +89,9 @@ async function main() {
       if (!password || password.length < 10) throw new Error('usage: set-passwords <password of 10+ chars>');
       const r = await c.query(
         `UPDATE hr.users SET "passwordHash" = $1, status = 'ACTIVE', "updatedAt" = now() WHERE "externalId" = ANY($2)`,
-        [hashPassword(password), ['dev-hr-admin', 'dev-manager', 'dev-employee']],
+        [hashPassword(password), ['dev-super-admin', 'dev-hr-admin', 'dev-manager', 'dev-employee']],
       );
-      if (r.rowCount !== 3) throw new Error(`expected to set 3 passwords, set ${r.rowCount}`);
+      if (r.rowCount !== 4) throw new Error(`expected to set 4 passwords, set ${r.rowCount}`);
     } else if (command === 'revoke-sessions' || command === 'expire-sessions') {
       const sql =
         command === 'revoke-sessions'

@@ -86,6 +86,16 @@ export const DEFAULT_PEOPLE: LocalPerson[] = [
     managerNumber: 'EMP-002',
     department: 'Engineering',
   },
+  {
+    externalId: 'dev-super-admin',
+    email: 'sam.superadmin@dev.local',
+    firstName: 'Sam',
+    lastName: 'Superadmin',
+    employeeNumber: 'EMP-004',
+    jobTitle: 'Founder',
+    roleKey: 'SUPER_ADMIN',
+    department: 'People & Operations',
+  },
 ];
 
 export function defaultSpec(companyId: string): LocalProvisionSpec {

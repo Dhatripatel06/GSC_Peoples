@@ -44,15 +44,33 @@ test.describe('production build ignores demo and dev-auth flags and fails closed
     }
   });
 
+  test('with the API unreachable, signing in shows an error, keeps the URL clean and creates no session', async ({ page, context }) => {
+    await page.goto('/login');
+    await page.getByLabel('Email').fill('someone@example.com');
+    await page.getByLabel('Password', { exact: true }).fill('Zq9-Unreachable-Marker!');
+    await page.getByRole('button', { name: 'Sign in' }).click();
+    await expect(page.locator('form [role="alert"]')).toBeVisible();
+    expect(new URL(page.url()).search).toBe('');
+    expect(page.url()).not.toContain('Zq9');
+    expect((await context.cookies()).filter((c) => c.name.startsWith('gsc_'))).toEqual([]);
+    await expect(page.getByText('Demo mode.')).toHaveCount(0);
+  });
+
   test('the UI pattern showcase is not served in production', async ({ request }) => {
     expect((await request.get('/showcase', { maxRedirects: 0 })).status()).toBe(404);
     expect((await request.get('/showcase/patterns', { maxRedirects: 0 })).status()).toBe(404);
   });
 
-  test('the dev-session endpoint does not exist (GET and POST are 404)', async ({ request }) => {
+  test('the dev-session endpoint does not exist: no handler ever answers, GET or POST', async ({ request }) => {
     for (const method of ['get', 'post'] as const) {
-      const res = await request[method]('/api/dev-session', method === 'post' ? { data: { persona: 'hr' } } : {});
-      expect(res.status()).toBe(404);
+      // Do not follow redirects: the first response is what matters. An anonymous caller is bounced to
+      // /login by the session gate (307); a route that existed would answer 200/201 with a token instead.
+      const res = await request[method]('/api/dev-session', {
+        maxRedirects: 0,
+        ...(method === 'post' ? { data: { persona: 'hr' } } : {}),
+      });
+      expect([307, 404], `${method} status`).toContain(res.status());
+      if (res.status() === 307) expect(new URL(res.headers().location!, 'http://x').pathname).toBe('/login');
       expect(await res.text()).not.toMatch(/dev:|token|dev-hr-admin/i);
     }
   });
@@ -86,7 +104,7 @@ test.describe('production bundles', () => {
     const offenders = new Set<string>();
     for (const f of files) {
       const text = readFileSync(f, 'utf8');
-      for (const id of ['dev-hr-admin', 'dev-manager', 'dev-employee']) if (text.includes(id)) offenders.add(`${path.relative(DIST, f)}: persona id ${id}`);
+      for (const id of ['dev-super-admin', 'dev-hr-admin', 'dev-manager', 'dev-employee']) if (text.includes(id)) offenders.add(`${path.relative(DIST, f)}: persona id ${id}`);
       for (const n of DEMO_NAMES) if (text.includes(n)) offenders.add(`${path.relative(DIST, f)}: demo person "${n}"`);
       if (text.includes('Demo: view as') || text.includes('createDemoStore')) offenders.add(`${path.relative(DIST, f)}: demo provider`);
     }

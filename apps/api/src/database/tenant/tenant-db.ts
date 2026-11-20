@@ -12,6 +12,8 @@ const DELEGATES = {
   companyMembership: 'CompanyMembership',
   employee: 'Employee',
   employeeAuditLog: 'EmployeeAuditLog',
+  holiday: 'Holiday',
+  auditLog: 'AuditLog',
 } as const;
 
 type DelegateKey = keyof typeof DELEGATES;

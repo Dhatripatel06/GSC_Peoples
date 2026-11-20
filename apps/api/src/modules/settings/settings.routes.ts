@@ -43,8 +43,8 @@ export function createSettingsRouter(prisma: PrismaClient): Router {
   // Authorization policy (PRD AUTH-004/005/006, SET-001/002/004, W4). Not a router-wide Super Admin gate:
   //  - Super Admin only: company profile, role changes, audit log.
   //  - Super Admin or HR Admin: list accounts, invite / resend, activate / deactivate, with the HR limits
-  //    enforced inside the handlers (HR never touches Super Admin accounts and only creates Manager and
-  //    Employee logins; HR Admin and Super Admin logins are created by a Super Admin).
+  //    enforced inside the handlers: HR only invites, resends for and activates/deactivates Manager and
+  //    Employee accounts. Anything touching an HR Admin or Super Admin account is Super Admin only.
   const superAdminOnly = requireRole('SUPER_ADMIN');
   const superAdminOrHr = requireRole('SUPER_ADMIN', 'HR_ADMIN');
   const isSuperAdmin = (req: Parameters<RequestHandler>[0]) => Boolean(req.user?.roles.includes('SUPER_ADMIN'));
@@ -227,8 +227,11 @@ export function createSettingsRouter(prisma: PrismaClient): Router {
       include: { user: true, role: true },
     });
     if (!membership) throw new ConflictError('Membership not found');
-    if (!isSuperAdmin(req) && membership.role.key === 'SUPER_ADMIN') {
-      throw new ForbiddenError('Only a Super Admin can change a Super Admin account');
+    // The target's role is read from the database for this company, never from the request. HR may only
+    // activate/deactivate ordinary (Manager, Employee) accounts: not HR Admins (itself included) and not
+    // Super Admins.
+    if (!isSuperAdmin(req) && !HR_MAY_INVITE.has(membership.role.key)) {
+      throw new ForbiddenError('Only a Super Admin can change an HR Admin or Super Admin account');
     }
 
     if (membership.role.key === 'SUPER_ADMIN' && parsed.data.status === 'DISABLED') {

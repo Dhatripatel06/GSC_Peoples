@@ -1,5 +1,6 @@
 import type { RequestHandler } from 'express';
 import { ALL_PERMISSIONS } from '@gsc/contracts';
+import { runInTenantContext } from '../../database/tenant/request-context';
 import { ForbiddenError, UnauthorizedError } from '../../shared/errors';
 
 export interface ResolvedMembership {
@@ -48,6 +49,7 @@ export function resolveTenant(resolve: MembershipResolver): RequestHandler {
       roles: [membership.roleKey],
       permissions: [...new Set(membership.permissions.filter((p) => known.has(p)))],
     };
-    next();
+    // Everything downstream of this point runs inside the caller's tenant context (RLS reads it).
+    runInTenantContext(identity.companyId, () => next());
   };
 }

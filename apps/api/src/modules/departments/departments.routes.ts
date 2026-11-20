@@ -17,7 +17,8 @@ export function createDepartmentsRouter(repository: DepartmentRepository): Route
   const router = Router();
   router.get(
     '/',
-    requireAnyPermission(PERMISSIONS.EMPLOYEE_READ_ALL, PERMISSIONS.EMPLOYEE_WRITE),
+    // PRD section 5: departments are viewable by every role (ORG-002).
+    requireAnyPermission(PERMISSIONS.ORG_READ, PERMISSIONS.EMPLOYEE_READ_ALL, PERMISSIONS.EMPLOYEE_WRITE),
     list,
   );
   return router;

@@ -42,6 +42,15 @@ export async function connect(key: UrlKey): Promise<pg.Client> {
   return client;
 }
 
+/**
+ * Binds a runtime-role connection to one tenant for its whole session (what the API does per
+ * transaction). Row-Level Security hides every company row from hr_app without a tenant context, so
+ * tests that exercise constraints and triggers as hr_app must say which company they act for.
+ */
+export async function bindTenant(client: pg.Client, companyId: string): Promise<void> {
+  await client.query('SELECT set_config($1, $2, false)', ['app.company_id', companyId]);
+}
+
 export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** Tracks a promise without awaiting it, so tests can assert it is still blocked. */

@@ -1,6 +1,6 @@
 import type pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { connect, failure, sleep, track } from './helpers';
+import { bindTenant, connect, failure, sleep, track } from './helpers';
 import { insertCompany, insertEmployee, resetData } from './seed';
 
 /**
@@ -13,6 +13,7 @@ const clients: pg.Client[] = [];
 
 const newApp = async () => {
   const c = await connect('TEST_DATABASE_URL');
+  await bindTenant(c, 'c1'); // RLS: every connection acts for company c1 (the one these tests use)
   clients.push(c);
   return c;
 };

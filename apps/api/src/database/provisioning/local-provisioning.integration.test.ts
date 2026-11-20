@@ -1,7 +1,7 @@
 import type pg from 'pg';
 import request from 'supertest';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { PERMISSIONS, meResponseSchema } from '@gsc/contracts';
+import { PERMISSIONS, meResponseSchema, permissionsForRole } from '@gsc/contracts';
 import { createApp } from '../../app';
 import { DevAuthProvider } from '../../integrations/central-auth/dev.provider';
 import { connect, testUrl } from '../../test/integration/helpers';
@@ -56,9 +56,9 @@ describe('local provisioning', () => {
       company: 1,
       roles: 4,
       departments: 2,
-      users: 3,
-      employees: 3,
-      memberships: 3,
+      users: 4,
+      employees: 4,
+      memberships: 4,
     });
     const after1 = await counts();
     const second = await provisionLocal(admin, defaultSpec(COMPANY));
@@ -77,6 +77,7 @@ describe('local provisioning', () => {
       { n: 'EMP-001', linked: true, mgr: null },
       { n: 'EMP-002', linked: true, mgr: null },
       { n: 'EMP-003', linked: true, mgr: 'EMP-002' },
+      { n: 'EMP-004', linked: true, mgr: null },
     ]);
   });
 
@@ -100,7 +101,9 @@ describe('local provisioning', () => {
     const mgr = await me('dev-manager');
     expect(mgr.roles).toEqual(['MANAGER']);
     expect(mgr.permissions).not.toContain(PERMISSIONS.EMPLOYEE_WRITE);
-    expect((await me('dev-employee')).permissions).toEqual([PERMISSIONS.EMPLOYEE_READ_SELF]);
+    const emp = (await me('dev-employee')).permissions;
+    expect([...emp].sort()).toEqual([...permissionsForRole('EMPLOYEE')].sort()); // code-defined matrix (PRD SET-003)
+    expect(emp).not.toContain(PERMISSIONS.EMPLOYEE_WRITE);
   });
 
   it('unknown dev identities get 401 and other-company tokens get 403', async () => {

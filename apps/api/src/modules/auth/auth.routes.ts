@@ -6,7 +6,7 @@ import { UnauthorizedError, ValidationError } from '../../shared/errors';
 import { env } from '../../config/env';
 import { hashPassword, secureToken, tokenHash, verifyPassword } from './password';
 
-const loginSchema = z.object({ email: z.email(), password: z.string().min(8).max(128), companyId: z.string().uuid().optional() });
+const loginSchema = z.object({ email: z.email(), password: z.string().min(8).max(128), companyId: z.string().uuid().optional(), roleKey: z.enum(['SUPER_ADMIN', 'HR_ADMIN', 'MANAGER', 'EMPLOYEE']).optional() });
 const resetRequestSchema = z.object({ email: z.email(), companyId: z.string().uuid().optional() });
 const resetSchema = z.object({ token: z.string().min(32), password: z.string().min(10).max(128) }); // PRD AUTH-002: 10+ characters
 const invitationSchema = z.object({ token: z.string().min(32), password: z.string().min(10).max(128), name: z.string().trim().min(1).max(200).optional() });
@@ -72,13 +72,18 @@ export function createAuthRouter(prisma: PrismaClient): Router {
     });
     if (!user || user.status !== 'ACTIVE' || !user.passwordHash ||
         (parsed.data.companyId && !user.memberships.some((m) => m.companyId === parsed.data.companyId)) ||
-        !verifyPassword(parsed.data.password, user.passwordHash)) {
+        !verifyPassword(parsed.data.password, user.passwordHash) ||
+        // The selected role is only a check against the database role, never a way to choose one.
+        (parsed.data.roleKey && !user.memberships.some((m) => m.role.key === parsed.data.roleKey))) {
       throw new UnauthorizedError('Invalid email or password');
     }
 
-    const memberships = parsed.data.companyId
-      ? user.memberships.filter((m) => m.companyId === parsed.data.companyId)
+    const roleMemberships = parsed.data.roleKey
+      ? user.memberships.filter((m) => m.role.key === parsed.data.roleKey)
       : user.memberships;
+    const memberships = parsed.data.companyId
+      ? roleMemberships.filter((m) => m.companyId === parsed.data.companyId)
+      : roleMemberships;
     if (memberships.length !== 1) {
       throw new ValidationError('Select an active company', { companyId: 'Required when a user belongs to multiple companies' });
     }

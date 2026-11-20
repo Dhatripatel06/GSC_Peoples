@@ -21,6 +21,9 @@ import { createEmployeeRepository, type TenantRunner } from './modules/employees
 import { createEmployeesRouter } from './modules/employees/employees.routes';
 import { createEmployeeService } from './modules/employees/employees.service';
 import { createMeRouter } from './modules/me/me.routes';
+import { createHolidayRepository } from './modules/holidays/holidays.repository';
+import { createHolidaysRouter } from './modules/holidays/holidays.routes';
+import { withRequestTenantContext } from './database/tenant/request-context';
 import { createAuthRouter } from './modules/auth/auth.routes';
 import { createSettingsRouter } from './modules/settings/settings.routes';
 import { SessionAuthProvider } from './integrations/local-auth/session-provider';
@@ -79,9 +82,21 @@ export function createApp(deps: AppDependencies = {}): Express {
 
   // ... and feature routes also require a validated ACTIVE company membership (which company).
   const tenant = resolveTenant(resolveMembership);
-  api.use('/me', tenant, createMeRouter());
-  if (prisma) api.use('/settings', tenant, createSettingsRouter(prisma));
+  // /me includes the caller's company configuration (timezone, working days and hours). Only available
+  // with a database; the company id is the validated membership's, never request input.
+  const loadCompany = prisma || deps.tenantRunner
+    ? async (companyId: string) =>
+        tenantRunner({ companyId }, (db) =>
+          db.company.findFirst({
+            where: { id: companyId },
+            select: { name: true, timezone: true, workingDays: true, workStartTime: true, workEndTime: true },
+          }),
+        )
+    : undefined;
+  api.use('/me', tenant, createMeRouter(loadCompany));
+  if (prisma) api.use('/settings', tenant, createSettingsRouter(withRequestTenantContext(prisma)));
   api.use('/employees', tenant, createEmployeesRouter(createEmployeeService(createEmployeeRepository(tenantRunner))));
+  api.use('/holidays', tenant, createHolidaysRouter(createHolidayRepository(tenantRunner)));
   api.use('/departments', tenant, createDepartmentsRouter(createDepartmentRepository(tenantRunner)));
 
   app.use(API_PREFIX, api);

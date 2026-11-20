@@ -58,7 +58,7 @@ model Company {
   timezone      String   @default("UTC")
   workingDays   Int[]    @default([1, 2, 3, 4, 5])
   workStartTime String   @default("09:00")
-  workEndTime   String   @default("17:00")
+  workEndTime   String   @default("18:00")
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -72,6 +72,7 @@ model Company {
   passwordResets  PasswordResetToken[]
   invitations     InvitationToken[]
   auditLogs       AuditLog[]
+  holidays        Holiday[]
 
   @@map("companies")
 }
@@ -307,4 +308,21 @@ model AuditLog {
   @@index([companyId, entity, entityId, createdAt])
   @@index([companyId, createdAt])
   @@map("audit_logs")
+}
+
+// Company holiday calendar (PRD ORG-004). One holiday per company-local date. Holidays are excluded
+// from leave-day counts and from "absent" (used by the upcoming leave and attendance modules).
+model Holiday {
+  id        String   @id @default(uuid())
+  companyId String
+  date      DateTime @db.Date
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+
+  @@unique([companyId, date])
+  @@unique([companyId, id])
+  @@map("holidays")
 }
