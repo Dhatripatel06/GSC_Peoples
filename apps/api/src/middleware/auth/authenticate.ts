@@ -7,13 +7,24 @@ import { UnauthorizedError } from '../../shared/errors';
  * This proves who the caller is; it does NOT grant access to any company. Feature routes must also
  * run `resolveTenant`, which validates an ACTIVE membership and sets `req.user`.
  */
-export function authenticate(provider: CentralAuthProvider): RequestHandler {
+export function authenticate(provider: CentralAuthProvider, sessionProvider?: CentralAuthProvider): RequestHandler {
   return async (req, _res, next) => {
     const header = req.header('authorization');
-    const token = header?.startsWith('Bearer ') ? header.slice(7).trim() : undefined;
-    if (!token) throw new UnauthorizedError('Missing bearer token');
+    const bearerToken = header?.startsWith('Bearer ') ? header.slice(7).trim() : undefined;
 
-    req.identity = await provider.verifyToken(token);
+    const cookieHeader = req.headers.cookie;
+    const sessionCookie = cookieHeader
+      ?.split(';')
+      .map((part) => part.trim())
+      .find((part) => part.startsWith('gsc_session='));
+    const sessionToken = sessionCookie ? decodeURIComponent(sessionCookie.slice('gsc_session='.length)) : undefined;
+
+    if (!bearerToken && !sessionToken) throw new UnauthorizedError('Missing bearer token or session');
+
+    req.identity = await (sessionToken && sessionProvider
+      ? sessionProvider.verifyToken(sessionToken)
+      : provider.verifyToken(bearerToken!));
+    await provider.syncUser(req.identity);
     next();
   };
 }

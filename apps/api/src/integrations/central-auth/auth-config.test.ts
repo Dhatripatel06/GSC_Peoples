@@ -41,10 +41,27 @@ describe('development auth gating (production safety)', () => {
     );
   });
 
-  it('sso mode stays fail-closed and untouched', async () => {
-    const p = createAuthProvider({ ...base, AUTH_MODE: 'sso', NODE_ENV: 'development', DEV_AUTH_ENABLED: true });
+  it('sso mode requires JWKS, issuer and audience configuration', () => {
+    expect(() => createAuthProvider({
+      ...base,
+      AUTH_MODE: 'sso',
+      NODE_ENV: 'development',
+      DEV_AUTH_ENABLED: true,
+      CENTRAL_AUTH_JWKS_URL: undefined,
+      CENTRAL_AUTH_ISSUER: undefined,
+      CENTRAL_AUTH_AUDIENCE: undefined,
+    })).toThrow(/requires JWKS URL, issuer and audience/);
+
+    const p = createAuthProvider({
+      ...base,
+      AUTH_MODE: 'sso',
+      NODE_ENV: 'development',
+      DEV_AUTH_ENABLED: true,
+      CENTRAL_AUTH_JWKS_URL: 'https://auth.example/.well-known/jwks.json',
+      CENTRAL_AUTH_ISSUER: 'https://auth.example/',
+      CENTRAL_AUTH_AUDIENCE: 'gsc-peoples',
+    });
     expect(p).toBeInstanceOf(SsoProvider);
-    await expect(p.verifyToken('x')).rejects.toThrow();
   });
 
   it('dev provider accepts only provisioned ids, with no roles or extra segments', async () => {

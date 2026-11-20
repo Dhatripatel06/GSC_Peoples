@@ -28,6 +28,22 @@ export const tenantMeta: TenantMeta = {
       "employeeAudits": {
         "target": "EmployeeAuditLog",
         "list": true
+      },
+      "sessions": {
+        "target": "UserSession",
+        "list": true
+      },
+      "passwordResets": {
+        "target": "PasswordResetToken",
+        "list": true
+      },
+      "invitations": {
+        "target": "InvitationToken",
+        "list": true
+      },
+      "auditLogs": {
+        "target": "AuditLog",
+        "list": true
       }
     }
   },
@@ -40,6 +56,22 @@ export const tenantMeta: TenantMeta = {
       },
       "employeeAudits": {
         "target": "EmployeeAuditLog",
+        "list": true
+      },
+      "auditLogs": {
+        "target": "AuditLog",
+        "list": true
+      },
+      "sessions": {
+        "target": "UserSession",
+        "list": true
+      },
+      "passwordResets": {
+        "target": "PasswordResetToken",
+        "list": true
+      },
+      "invitations": {
+        "target": "InvitationToken",
         "list": true
       }
     }
@@ -105,6 +137,10 @@ export const tenantMeta: TenantMeta = {
       "employee": {
         "target": "Employee",
         "list": false
+      },
+      "invitations": {
+        "target": "InvitationToken",
+        "list": true
       }
     }
   },
@@ -146,6 +182,62 @@ export const tenantMeta: TenantMeta = {
       },
       "employee": {
         "target": "Employee",
+        "list": false
+      },
+      "actor": {
+        "target": "User",
+        "list": false
+      }
+    }
+  },
+  "UserSession": {
+    "hasCompanyId": true,
+    "relations": {
+      "company": {
+        "target": "Company",
+        "list": false
+      },
+      "user": {
+        "target": "User",
+        "list": false
+      }
+    }
+  },
+  "PasswordResetToken": {
+    "hasCompanyId": true,
+    "relations": {
+      "company": {
+        "target": "Company",
+        "list": false
+      },
+      "user": {
+        "target": "User",
+        "list": false
+      }
+    }
+  },
+  "InvitationToken": {
+    "hasCompanyId": true,
+    "relations": {
+      "company": {
+        "target": "Company",
+        "list": false
+      },
+      "user": {
+        "target": "User",
+        "list": false
+      },
+      "membership": {
+        "target": "CompanyMembership",
+        "list": false
+      }
+    }
+  },
+  "AuditLog": {
+    "hasCompanyId": true,
+    "relations": {
+      "company": {
+        "target": "Company",
         "list": false
       },
       "actor": {

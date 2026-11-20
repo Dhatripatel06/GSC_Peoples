@@ -52,10 +52,15 @@ enum EmployeeAuditAction {
 }
 
 model Company {
-  id        String   @id @default(uuid())
-  name      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            String   @id @default(uuid())
+  name          String
+  logoUrl       String?
+  timezone      String   @default("UTC")
+  workingDays   Int[]    @default([1, 2, 3, 4, 5])
+  workStartTime String   @default("09:00")
+  workEndTime   String   @default("17:00")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   memberships     CompanyMembership[]
   roles           Role[]
@@ -63,6 +68,10 @@ model Company {
   departments     Department[]
   employees       Employee[]
   employeeAudits  EmployeeAuditLog[]
+  sessions        UserSession[]
+  passwordResets  PasswordResetToken[]
+  invitations     InvitationToken[]
+  auditLogs       AuditLog[]
 
   @@map("companies")
 }
@@ -70,18 +79,25 @@ model Company {
 // Global identity (no companyId). If multiple identity providers are ever supported,
 // replace `externalId @unique` with `@@unique([issuer, externalId])` (additive migration).
 model User {
-  id          String     @id @default(uuid())
-  externalId  String     @unique // subject id issued by Central Authentication
-  email       String // cached from the identity provider, not authoritative
-  name        String?
-  status      UserStatus @default(ACTIVE)
-  lastLoginAt DateTime?
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  id             String     @id @default(uuid())
+  externalId     String     @unique // subject id issued by Central Authentication or local auth
+  email          String
+  name           String?
+  passwordHash   String?
+  passwordVersion Int       @default(1)
+  status         UserStatus @default(ACTIVE)
+  lastLoginAt    DateTime?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
 
   memberships    CompanyMembership[]
   employeeAudits EmployeeAuditLog[]
+  auditLogs      AuditLog[]
+  sessions       UserSession[]
+  passwordResets PasswordResetToken[]
+  invitations    InvitationToken[]
 
+  @@unique([email])
   @@index([email])
   @@map("users")
 }
@@ -150,8 +166,9 @@ model CompanyMembership {
 
   company  Company   @relation(fields: [companyId], references: [id], onDelete: Restrict)
   user     User      @relation(fields: [userId], references: [id], onDelete: Restrict)
-  role     Role      @relation(fields: [companyId, roleId], references: [companyId, id], onDelete: Restrict, onUpdate: Restrict)
-  employee Employee? @relation(fields: [companyId, employeeId], references: [companyId, id], onDelete: Restrict, onUpdate: Restrict)
+  role        Role              @relation(fields: [companyId, roleId], references: [companyId, id], onDelete: Restrict, onUpdate: Restrict)
+  employee    Employee?         @relation(fields: [companyId, employeeId], references: [companyId, id], onDelete: Restrict, onUpdate: Restrict)
+  invitations InvitationToken[]
 
   @@unique([companyId, userId]) // one membership per user per company
   @@unique([companyId, employeeId]) // an employee profile maps to at most one user
@@ -216,4 +233,78 @@ model EmployeeAuditLog {
   @@index([companyId, createdAt])
   @@index([actorUserId])
   @@map("employee_audit_logs")
+}
+
+model UserSession {
+  id             String   @id @default(uuid())
+  companyId      String
+  userId         String
+  tokenHash      String   @unique
+  csrfHash       String
+  expiresAt      DateTime
+  lastActivityAt DateTime @default(now())
+  revokedAt      DateTime?
+  createdAt      DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, userId])
+  @@index([expiresAt])
+  @@map("user_sessions")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  companyId String
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, userId])
+  @@map("password_reset_tokens")
+}
+
+model InvitationToken {
+  id           String    @id @default(uuid())
+  companyId    String
+  userId       String
+  membershipId String
+  tokenHash    String    @unique
+  expiresAt    DateTime
+  usedAt       DateTime?
+  revokedAt    DateTime?
+  createdAt    DateTime  @default(now())
+
+  company    Company           @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  user       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  membership CompanyMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, membershipId])
+  @@index([expiresAt])
+  @@map("invitation_tokens")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  companyId String
+  actorId   String?
+  action    String
+  entity    String
+  entityId  String
+  oldValue  Json?
+  newValue  Json?
+  createdAt DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  actor   User?   @relation(fields: [actorId], references: [id], onDelete: Restrict)
+
+  @@index([companyId, entity, entityId, createdAt])
+  @@index([companyId, createdAt])
+  @@map("audit_logs")
 }

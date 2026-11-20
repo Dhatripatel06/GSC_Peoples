@@ -1,6 +1,6 @@
 'use client';
 
-import { Bell, Building2, ChevronDown, Menu } from 'lucide-react';
+import { Bell, Building2, ChevronDown, LogOut, Menu } from 'lucide-react';
 import { ThemeToggle } from '@/components/shared/theme-toggle';
 import { Avatar } from '@/components/ui/avatar';
 import { buttonVariants } from '@/components/ui/button';
@@ -69,13 +69,25 @@ export function TopBar({
 
       <ThemeToggle className="max-sm:hidden" />
 
-      <PlaceholderMenu
-        label="User menu"
-        title="User menu"
-        description="Profile and sign-out are not connected yet. Sign-in will be added with authentication."
-        triggerClassName="cursor-pointer rounded-full"
-        trigger={<Avatar name="Demo User" size="lg" />}
-      />
+      <button
+        type="button"
+        aria-label="Sign out"
+        title="Sign out"
+        onClick={async () => {
+          const api = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000/api/v1';
+          const csrf = document.cookie.split('; ').find((row) => row.startsWith('gsc_csrf='))?.slice('gsc_csrf='.length) ?? '';
+          await fetch(`${api}/auth/logout`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: { 'X-CSRF-Token': csrf },
+          }).catch(() => undefined);
+          window.location.assign('/login');
+        }}
+        className={cn(buttonVariants({ variant: 'ghost', size: 'icon' }), 'rounded-full')}
+      >
+        <LogOut className="size-[18px]" strokeWidth={1.75} aria-hidden />
+      </button>
+      <Avatar name="Account" size="lg" />
     </header>
   );
 }

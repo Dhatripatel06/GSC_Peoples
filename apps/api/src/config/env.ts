@@ -44,6 +44,13 @@ const envSchema = z
         message: 'DEV_AUTH_ENABLED is not allowed when NODE_ENV=production',
       });
     }
+    if (env.AUTH_MODE === 'sso' && (!env.CENTRAL_AUTH_JWKS_URL || !env.CENTRAL_AUTH_ISSUER || !env.CENTRAL_AUTH_AUDIENCE)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['CENTRAL_AUTH_JWKS_URL'],
+        message: 'SSO mode requires CENTRAL_AUTH_JWKS_URL, CENTRAL_AUTH_ISSUER and CENTRAL_AUTH_AUDIENCE',
+      });
+    }
     if (env.NODE_ENV === 'production' && env.AUTH_MODE === 'development') {
       ctx.addIssue({
         code: 'custom',
