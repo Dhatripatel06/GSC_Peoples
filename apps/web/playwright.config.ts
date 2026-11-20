@@ -24,5 +24,8 @@ export default defineConfig({
     url: 'http://localhost:3000',
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
+    // The UI-shell and demo-directory suites exercise layout and permissions with fictional data and no
+    // login. Demo mode must be requested explicitly (and is impossible in a production build).
+    env: { NEXT_PUBLIC_EMPLOYEES_ADAPTER: 'demo' },
   },
 });

@@ -46,7 +46,7 @@ export function createApp(deps: AppDependencies = {}): Express {
     cors({
       origin: env.CORS_ORIGINS,
       credentials: true,
-      allowedHeaders: ['authorization', 'content-type', 'x-request-id'],
+      allowedHeaders: ['authorization', 'content-type', 'x-request-id', 'x-csrf-token'],
     }),
   );
   app.use(requestLogger);
@@ -64,6 +64,10 @@ export function createApp(deps: AppDependencies = {}): Express {
   api.use(healthRouter);
 
   const prisma = isDatabaseConfigured() ? getPrisma() : undefined;
+  // Cookie sessions live in PostgreSQL: without a database the session modes cannot authenticate anyone.
+  if (!prisma && !deps.sessionProvider && env.AUTH_MODE !== 'development') {
+    throw new Error(`AUTH_MODE=${env.AUTH_MODE} requires a configured database (DATABASE_URL)`);
+  }
   if (prisma) api.use('/auth', createAuthRouter(prisma));
 
   // Everything registered after this line requires authentication (who you are) ...

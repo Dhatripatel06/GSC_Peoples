@@ -25,9 +25,16 @@ const envSchema = z
           .map((o) => o.trim())
           .filter(Boolean),
       ),
+    /** Internal: true when CORS_ORIGINS was provided (the localhost default must not leak into production). */
+    CORS_ORIGINS_EXPLICIT: z.boolean().default(false),
     DATABASE_URL: optionalString,
     REDIS_URL: optionalUrl,
-    AUTH_MODE: z.enum(['development', 'sso']).default('development'),
+    /**
+     * development: local dev bearer adapter (never production).
+     * session:     first-party email/password with httpOnly cookie sessions (bearer tokens are rejected).
+     * sso:         Central Authentication bearer tokens (JWKS) in addition to cookie sessions.
+     */
+    AUTH_MODE: z.enum(['development', 'session', 'sso']).default('development'),
     CENTRAL_AUTH_BASE_URL: optionalUrl,
     CENTRAL_AUTH_JWKS_URL: optionalUrl,
     CENTRAL_AUTH_ISSUER: optionalString,
@@ -55,7 +62,14 @@ const envSchema = z
       ctx.addIssue({
         code: 'custom',
         path: ['AUTH_MODE'],
-        message: 'AUTH_MODE=development is not allowed when NODE_ENV=production',
+        message: 'AUTH_MODE=development is not allowed when NODE_ENV=production; use session or sso',
+      });
+    }
+    if (env.NODE_ENV === 'production' && !env.CORS_ORIGINS_EXPLICIT) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['CORS_ORIGINS'],
+        message: 'CORS_ORIGINS must be set explicitly when NODE_ENV=production',
       });
     }
     if (env.NODE_ENV !== 'test' && !env.DATABASE_URL) {
@@ -70,7 +84,10 @@ const envSchema = z
 export type Env = z.infer<typeof envSchema>;
 
 export function parseEnv(source: NodeJS.ProcessEnv = process.env): Env {
-  const result = envSchema.safeParse(source);
+  const result = envSchema.safeParse({
+    ...source,
+    CORS_ORIGINS_EXPLICIT: typeof source.CORS_ORIGINS === 'string' && source.CORS_ORIGINS.trim() !== '',
+  });
   if (!result.success) {
     const lines = result.error.issues.map(
       (i) => `  - ${i.path.join('.') || '(root)'}: ${i.message}`,

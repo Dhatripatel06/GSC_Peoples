@@ -49,14 +49,16 @@ for (const width of WIDTHS) {
         await expect(page.getByRole('dialog', { name: 'Navigation menu' })).toHaveCount(0);
         await expect(page.getByRole('button', { name: 'Open navigation menu' })).toBeVisible();
       } else {
-        expect(await sidebarWidth(page)).toBe(mode === 'desktop' ? 240 : 64);
+        // Poll: the server render assumes desktop, so tablet settles at 64px once hydrated.
+        await expect.poll(() => sidebarWidth(page)).toBe(mode === 'desktop' ? 240 : 64);
         await expect(page.getByRole('button', { name: 'Open navigation menu' })).toBeHidden();
         const nav = page.getByRole('navigation', { name: 'Primary' });
         await expect(nav.getByRole('link', { name: 'Dashboard' })).toHaveAttribute('aria-current', 'page');
         await expect(nav.getByRole('link')).toHaveCount(NAV.length);
         // navigate and confirm active state + title follow the route
         await nav.getByRole('link', { name: 'Employees' }).click();
-        await expect(page).toHaveURL(/\/employees$/);
+        // Generous timeout: the first visit to a route in `next dev` includes its on-demand compile.
+        await expect(page).toHaveURL(/\/employees$/, { timeout: 30_000 });
         await expect(page.getByRole('heading', { level: 1, name: 'Employees' })).toBeVisible();
         await expect(nav.getByRole('link', { name: 'Employees' })).toHaveAttribute('aria-current', 'page');
         await expect(nav.getByRole('link', { name: 'Dashboard' })).not.toHaveAttribute('aria-current', 'page');
@@ -76,7 +78,12 @@ for (const width of WIDTHS) {
 
     test('top bar placeholders are marked and keyboard operable', async ({ page }) => {
       await page.goto('/dashboard');
-      for (const label of ['Company switcher', 'Notifications', 'User menu']) {
+      // The "User menu" placeholder was replaced by a real Sign out button (commit 13ff401). It is
+      // keyboard-reachable but not clicked here: it ends the session and navigates to /login.
+      const signOut = page.getByRole('button', { name: 'Sign out', exact: true });
+      await signOut.focus();
+      await expect(signOut).toBeFocused();
+      for (const label of ['Company switcher', 'Notifications']) {
         const trigger = page.getByRole('button', { name: label, exact: true });
         await trigger.focus();
         await page.keyboard.press('Enter');
@@ -234,7 +241,7 @@ for (const width of WIDTHS) {
     if (mode === 'tablet') {
       test('tablet sidebar is auto-collapsed with no manual toggle', async ({ page }) => {
         await page.goto('/dashboard');
-        expect(await sidebarWidth(page)).toBe(64);
+        await expect.poll(() => sidebarWidth(page)).toBe(64);
         await expect(page.getByRole('button', { name: /sidebar/i })).toHaveCount(0);
       });
     }

@@ -34,12 +34,15 @@ const q = async <T extends object>(sql: string, params: unknown[] = []) =>
   (await admin.query<T>(sql, params)).rows;
 
 describe('pg_constraint: CHECK constraints', () => {
-  it('exactly the five expected CHECK constraints exist, validated, with the intended expressions', async () => {
+  it('exactly the eight expected CHECK constraints exist, validated, with the intended expressions', async () => {
     const rows = await q<{ conrelid: string; conname: string; def: string; convalidated: boolean }>(
       `SELECT conrelid::regclass::text AS conrelid, conname, pg_get_constraintdef(oid) AS def, convalidated
        FROM pg_constraint WHERE connamespace = 'hr'::regnamespace AND contype = 'c' ORDER BY conname`,
     );
     expect(rows.map((r) => r.conname)).toEqual([
+      'companies_timezone_not_blank',
+      'companies_working_days_valid',
+      'companies_working_hours_valid',
       'employees_no_self_manager',
       'employees_terminated_requires_termination_date',
       'employees_termination_after_hire',
@@ -157,7 +160,7 @@ describe('pg_constraint / pg_indexes: keys and indexes', () => {
     });
   });
 
-  it('has exactly the reviewed secondary indexes (18) and no extras', async () => {
+  it('has exactly the reviewed secondary indexes (19) and no extras', async () => {
     const rows = await q<{ indexname: string }>(
       `SELECT indexname FROM pg_indexes WHERE schemaname = 'hr' AND tablename = ANY($1) AND indexname NOT LIKE '%\\_pkey' ESCAPE '\\' ORDER BY indexname`,
       [MINE],
@@ -180,19 +183,54 @@ describe('pg_constraint / pg_indexes: keys and indexes', () => {
       'roles_companyId_id_key',
       'roles_companyId_key_key',
       'users_email_idx',
+      'users_email_key',
       'users_externalId_key',
     ]);
   });
 
-  it('companies is unchanged: same columns as the init migration, no new constraints on it', async () => {
-    const cols = await q<{ column_name: string; data_type: string; is_nullable: string }>(
-      `SELECT column_name, data_type, is_nullable FROM information_schema.columns WHERE table_schema='hr' AND table_name='companies' ORDER BY ordinal_position`,
+  it('companies has the init columns plus the phase-1 settings columns and only the three settings CHECKs', async () => {
+    const cols = await q<{ column_name: string }>(
+      `SELECT column_name FROM information_schema.columns WHERE table_schema='hr' AND table_name='companies' ORDER BY ordinal_position`,
     );
-    expect(cols.map((c) => c.column_name)).toEqual(['id', 'name', 'createdAt', 'updatedAt']);
-    const own = await q<{ contype: string }>(
-      `SELECT contype FROM pg_constraint WHERE conrelid = 'hr.companies'::regclass AND contype IN ('c','f','u')`,
+    expect(cols.map((c) => c.column_name)).toEqual([
+      'id', 'name', 'createdAt', 'updatedAt',
+      'logoUrl', 'timezone', 'workingDays', 'workStartTime', 'workEndTime',
+    ]);
+    const own = await q<{ contype: string; conname: string }>(
+      `SELECT contype, conname FROM pg_constraint WHERE conrelid = 'hr.companies'::regclass AND contype IN ('c','f','u') ORDER BY conname`,
     );
-    expect(own).toEqual([]);
+    expect(own.map((c) => [c.contype, c.conname])).toEqual([
+      ['c', 'companies_timezone_not_blank'],
+      ['c', 'companies_working_days_valid'],
+      ['c', 'companies_working_hours_valid'],
+    ]);
+  });
+});
+
+describe('companies settings CHECK behaviour', () => {
+  const setDays = (days: string) => admin.query(`UPDATE hr.companies SET "workingDays" = ${days} WHERE id = 'c1'`);
+  const rejected = async (fn: () => Promise<unknown>, constraint: string) => {
+    const e = await failure(fn);
+    expect([e.code, e.constraint]).toEqual(['23514', constraint]);
+  };
+
+  it('workingDays: 1-7 distinct day numbers only', async () => {
+    for (const bad of ["'{}'::int[]", "ARRAY[0]", "ARRAY[8]", "ARRAY[1,1]", "ARRAY[1,NULL]::int[]", "ARRAY[1,2,3,4,5,6,7,7]"]) {
+      await rejected(() => setDays(bad), 'companies_working_days_valid');
+    }
+    for (const good of ['ARRAY[1]', 'ARRAY[1,2,3,4,5]', 'ARRAY[7,1,3]', 'ARRAY[1,2,3,4,5,6,7]']) {
+      await expect(setDays(good)).resolves.toBeDefined();
+    }
+  });
+
+  it('working hours must be HH:MM with start before end; timezone must not be blank', async () => {
+    const set = (start: string, end: string) =>
+      admin.query(`UPDATE hr.companies SET "workStartTime" = $1, "workEndTime" = $2 WHERE id = 'c1'`, [start, end]);
+    for (const [s, e] of [['9:00', '17:00'], ['09:00', '24:00'], ['17:00', '09:00'], ['09:00', '09:00']]) {
+      await rejected(() => set(s!, e!), 'companies_working_hours_valid');
+    }
+    await expect(set('08:30', '16:45')).resolves.toBeDefined();
+    await rejected(() => admin.query(`UPDATE hr.companies SET timezone = '  ' WHERE id = 'c1'`), 'companies_timezone_not_blank');
   });
 });
 

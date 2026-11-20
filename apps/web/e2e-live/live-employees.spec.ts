@@ -44,6 +44,9 @@ test.beforeAll(() => {
 test.afterAll(async ({ playwright }) => {
   const request = await playwright.request.newContext();
   try {
+    // The UI may fail after the API created the record (e.g. a slow first compile), so fall back to
+    // looking the test-owned employee up by its unique run number.
+    createdId ??= (await findCreatedByNumber(request))?.id;
     if (createdId) {
       const res = await request.put(`${API}/employees/${createdId}/status`, {
         headers: auth('hr'),
@@ -56,6 +59,13 @@ test.afterAll(async ({ playwright }) => {
     fixture('remove');
   }
 });
+
+async function findCreatedByNumber(request: APIRequestContext) {
+  const res = await request.get(`${API}/employees?q=${encodeURIComponent(`E2E-${RUN}-A`)}`, { headers: auth('hr') });
+  if (!res.ok()) return undefined;
+  const body = (await res.json()) as { data: { id: string; employeeNumber: string }[] };
+  return body.data.find((e) => e.employeeNumber === `E2E-${RUN}-A`);
+}
 
 async function openAs(page: Page, persona: Persona) {
   await page.goto('/employees');
@@ -103,7 +113,8 @@ test.describe('HR Admin (real API + PostgreSQL)', () => {
     await form.getByLabel('Job title').fill('Test Engineer');
     await form.getByRole('button', { name: 'Create employee' }).click();
 
-    await expect(page).toHaveURL(/\/employees\/[0-9a-f-]{36}$/);
+    // Generous: the first visit to /employees/[id] compiles the route in `next dev`.
+    await expect(page).toHaveURL(/\/employees\/[0-9a-f-]{36}$/, { timeout: 30_000 });
     createdId = page.url().split('/').pop();
     const profile = page.getByRole('article', { name: `Profile of E2E Run${RUN}` });
     await expect(profile).toBeVisible();

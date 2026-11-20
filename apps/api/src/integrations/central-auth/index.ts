@@ -25,6 +25,10 @@ export function createAuthProvider(config: AuthConfig = env): CentralAuthProvide
       audience: config.CENTRAL_AUTH_AUDIENCE,
     });
   }
+  if (config.AUTH_MODE === 'session') {
+    // Cookie sessions only (verified by SessionAuthProvider in app.ts). Bearer tokens are rejected.
+    return new DisabledAuthProvider();
+  }
   if (config.NODE_ENV === 'production') {
     throw new Error('Development authentication adapter must never run in production');
   }

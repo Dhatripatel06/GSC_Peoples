@@ -1,8 +1,9 @@
 /**
  * REAL adapter for the Employees API (`/api/v1/employees`, `/api/v1/departments`).
- * Written against the contracts and verified only with a fake `fetch` in unit tests: it has NOT been
- * run against a live API. It needs a token source, which depends on Central Authentication
- * (not available yet), so it is not the default adapter. See docs/development/employee-directory.md.
+ * Authenticates with the httpOnly `gsc_session` cookie (sent via `credentials: 'include'`); writes
+ * also carry the double-submit CSRF token from the readable `gsc_csrf` cookie. No bearer token and no
+ * identity is ever supplied by the browser: the API derives user, company and permissions from the
+ * session. See docs/development/employee-directory.md.
  */
 import {
   apiErrorSchema,
@@ -17,9 +18,18 @@ import type { EmployeesService } from '../service';
 export interface HttpServiceOptions {
   /** e.g. http://localhost:4000/api/v1 */
   baseUrl: string;
-  /** Returns the bearer token issued by Central Authentication. */
-  getToken: () => Promise<string> | string;
+  /** Overridable for tests; defaults to reading the `gsc_csrf` cookie. */
+  getCsrfToken?: () => string;
+  /** Called on any 401 (expired or revoked session) so the app can send the user to sign in. */
+  onUnauthorized?: () => void;
   fetchImpl?: typeof fetch;
+}
+
+/** The double-submit CSRF token the API set in the readable `gsc_csrf` cookie (empty if signed out). */
+export function readCsrfToken(): string {
+  if (typeof document === 'undefined') return '';
+  const row = document.cookie.split('; ').find((r) => r.startsWith('gsc_csrf='));
+  return row ? decodeURIComponent(row.slice('gsc_csrf='.length)) : '';
 }
 
 export function buildListQueryString(query: EmployeeListQueryInput): string {
@@ -42,7 +52,8 @@ export function buildListQueryString(query: EmployeeListQueryInput): string {
 
 export function createHttpEmployeesService({
   baseUrl,
-  getToken,
+  getCsrfToken = readCsrfToken,
+  onUnauthorized,
   fetchImpl,
 }: HttpServiceOptions): EmployeesService {
   const root = baseUrl.replace(/\/+$/, '');
@@ -53,16 +64,18 @@ export function createHttpEmployeesService({
     try {
       res = await doFetch(`${root}${path}`, {
         ...init,
+        credentials: 'include',
         headers: {
           Accept: 'application/json',
           ...(init.body ? { 'Content-Type': 'application/json' } : {}),
-          Authorization: `Bearer ${await getToken()}`,
+          ...(init.method && init.method !== 'GET' ? { 'X-CSRF-Token': getCsrfToken() } : {}),
         },
       });
     } catch {
       throw new ApiError(0, 'NETWORK_ERROR', 'Could not reach the server');
     }
     const body: unknown = await res.json().catch(() => undefined);
+    if (res.status === 401) onUnauthorized?.();
     if (!res.ok) {
       const parsed = apiErrorSchema.safeParse(body);
       if (parsed.success) {

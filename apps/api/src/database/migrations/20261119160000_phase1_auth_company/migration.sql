@@ -14,10 +14,17 @@ ALTER TABLE "companies" ADD CONSTRAINT "companies_working_hours_valid"
   CHECK ("workStartTime" ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'
      AND "workEndTime" ~ '^([01][0-9]|2[0-3]):[0-5][0-9]$'
      AND "workStartTime" < "workEndTime");
+-- PostgreSQL forbids subqueries directly in CHECK constraints, so the rule lives in an IMMUTABLE
+-- helper: 1-7 distinct day numbers, each between 1 and 7, no NULL elements.
+-- (`<@` is false when any element is NULL or outside 1..7.) Created in the migration's schema (hr).
+CREATE FUNCTION "working_days_valid"(days INTEGER[]) RETURNS BOOLEAN
+  LANGUAGE sql IMMUTABLE PARALLEL SAFE
+  AS $$ SELECT days IS NOT NULL
+               AND cardinality(days) BETWEEN 1 AND 7
+               AND days <@ ARRAY[1,2,3,4,5,6,7]
+               AND cardinality(days) = (SELECT COUNT(DISTINCT d) FROM unnest(days) AS d) $$;
 ALTER TABLE "companies" ADD CONSTRAINT "companies_working_days_valid"
-  CHECK (cardinality("workingDays") BETWEEN 1 AND 7
-     AND NOT EXISTS (SELECT 1 FROM unnest("workingDays") d WHERE d < 1 OR d > 7)
-     AND (SELECT COUNT(*) = COUNT(DISTINCT d) FROM unnest("workingDays") d));
+  CHECK ("working_days_valid"("workingDays"));
 
 ALTER TABLE "users"
   ADD COLUMN "passwordHash" TEXT,

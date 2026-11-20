@@ -3,19 +3,18 @@ import { ApiError } from '../errors';
 import type { Session } from '../permissions';
 
 /**
- * Resolves the caller through `GET /api/v1/me`. Roles and permissions are taken verbatim from the API
+ * Resolves the caller through `GET /api/v1/me` using the session cookie. Roles and permissions are taken verbatim from the API
  * (the database membership); nothing is defaulted or hardcoded here.
  */
 export async function fetchSession(opts: {
   baseUrl: string;
-  token: string;
-  displayName: string;
   fetchImpl?: typeof fetch;
 }): Promise<Session> {
   let res: Response;
   try {
     res = await (opts.fetchImpl ?? fetch)(`${opts.baseUrl.replace(/\/+$/, '')}/me`, {
-      headers: { Accept: 'application/json', Authorization: `Bearer ${opts.token}` },
+      credentials: 'include',
+      headers: { Accept: 'application/json' },
       cache: 'no-store',
     });
   } catch {
@@ -34,7 +33,7 @@ export async function fetchSession(opts: {
   const roleKey = me.roles.find((r): r is RoleKey => (ROLE_KEYS as readonly string[]).includes(r));
   if (!roleKey) throw new ApiError(403, 'FORBIDDEN', 'No recognised role for this company');
   return {
-    displayName: opts.displayName,
+    displayName: me.name ?? me.email ?? 'Signed-in user',
     roleKey,
     employeeId: me.employeeId,
     permissions: me.permissions,

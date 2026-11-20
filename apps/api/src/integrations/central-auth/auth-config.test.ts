@@ -71,4 +71,19 @@ describe('development auth gating (production safety)', () => {
       await expect(p.verifyToken(bad)).rejects.toThrow();
     }
   });
+
+  it('session mode is allowed in production, needs no SSO, and accepts no bearer token', async () => {
+    const p = createAuthProvider({ ...base, AUTH_MODE: 'session', NODE_ENV: 'production', DEV_AUTH_ENABLED: false });
+    expect(p).toBeInstanceOf(DisabledAuthProvider);
+    await expect(p.verifyToken('dev:dev-hr-admin')).rejects.toThrow();
+  });
+
+  it('production config: session passes; unset auth mode, missing database or implicit CORS fail closed', () => {
+    const ok = { NODE_ENV: 'production', AUTH_MODE: 'session', DATABASE_URL: url, CORS_ORIGINS: 'https://hr.example.com' };
+    expect(parseEnv(ok).AUTH_MODE).toBe('session');
+    const without = (key: keyof typeof ok) => Object.fromEntries(Object.entries(ok).filter(([k]) => k !== key));
+    expect(() => parseEnv(without('AUTH_MODE'))).toThrow(/AUTH_MODE/);
+    expect(() => parseEnv(without('DATABASE_URL'))).toThrow(/DATABASE_URL/);
+    expect(() => parseEnv(without('CORS_ORIGINS'))).toThrow(/CORS_ORIGINS/);
+  });
 });

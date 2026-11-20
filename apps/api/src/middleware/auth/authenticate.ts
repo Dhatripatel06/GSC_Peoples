@@ -19,12 +19,21 @@ export function authenticate(provider: CentralAuthProvider, sessionProvider?: Ce
       .find((part) => part.startsWith('gsc_session='));
     const sessionToken = sessionCookie ? decodeURIComponent(sessionCookie.slice('gsc_session='.length)) : undefined;
 
-    if (!bearerToken && !sessionToken) throw new UnauthorizedError('Missing bearer token or session');
-
-    req.identity = await (sessionToken && sessionProvider
-      ? sessionProvider.verifyToken(sessionToken)
-      : provider.verifyToken(bearerToken!));
-    await provider.syncUser(req.identity);
+    // A session cookie is only usable when a session provider is configured; otherwise it is ignored
+    // and the caller must present a bearer token. Never call a provider with an undefined token.
+    let verifiedBy: CentralAuthProvider;
+    if (sessionToken && sessionProvider) {
+      req.identity = await sessionProvider.verifyToken(sessionToken);
+      req.authMethod = 'session';
+      verifiedBy = sessionProvider;
+    } else if (bearerToken) {
+      req.identity = await provider.verifyToken(bearerToken);
+      req.authMethod = 'bearer';
+      verifiedBy = provider;
+    } else {
+      throw new UnauthorizedError('Missing bearer token or session');
+    }
+    await verifiedBy.syncUser(req.identity);
     next();
   };
 }

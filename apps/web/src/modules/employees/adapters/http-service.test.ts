@@ -23,13 +23,17 @@ const employee = {
 const reply = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
-function make(handler: (url: string, init: RequestInit) => Response | Promise<Response>) {
+function make(
+  handler: (url: string, init: RequestInit) => Response | Promise<Response>,
+  onUnauthorized?: () => void,
+) {
   const fetchImpl = vi.fn(async (url: string | URL | Request, init?: RequestInit) =>
     handler(String(url), init ?? {}),
   );
   const service = createHttpEmployeesService({
     baseUrl: 'http://api.test/api/v1/',
-    getToken: () => 'tok-123',
+    getCsrfToken: () => 'csrf-abc',
+    onUnauthorized,
     fetchImpl: fetchImpl as unknown as typeof fetch,
   });
   return { service, fetchImpl };
@@ -54,8 +58,8 @@ describe('buildListQueryString', () => {
   });
 });
 
-describe('http adapter (verified with a fake fetch only; never run against a live API)', () => {
-  it('sends the bearer token and parses a list response with the shared contract', async () => {
+describe('http adapter (unit level, fake fetch; live coverage is in the Playwright live suites)', () => {
+  it('authenticates with the session cookie (no bearer token) and parses a list response', async () => {
     const { service, fetchImpl } = make(() =>
       reply(200, { data: [employee], page: { limit: 25, nextCursor: null } }),
     );
@@ -63,7 +67,36 @@ describe('http adapter (verified with a fake fetch only; never run against a liv
     expect(r.data[0]?.employeeNumber).toBe('GS-0001');
     const [url, init] = fetchImpl.mock.calls[0]!;
     expect(String(url)).toBe('http://api.test/api/v1/employees?q=a');
-    expect((init!.headers as Record<string, string>).Authorization).toBe('Bearer tok-123');
+    expect(init!.credentials).toBe('include');
+    const headers = init!.headers as Record<string, string>;
+    expect(headers.Authorization).toBeUndefined();
+    expect(headers['X-CSRF-Token']).toBeUndefined(); // reads need no CSRF token
+  });
+
+  it('sends the CSRF token on every write and on no read', async () => {
+    const seen: [string | undefined, string | undefined][] = [];
+    const { service } = make((_url, init) => {
+      seen.push([init.method, (init.headers as Record<string, string>)['X-CSRF-Token']]);
+      return reply(200, { data: employee });
+    });
+    await service.create({ employeeNumber: 'X', firstName: 'a', lastName: 'b' });
+    await service.update(employee.id, { jobTitle: 'x' });
+    await service.changeStatus(employee.id, { status: 'TERMINATED', terminationDate: '2026-12-01' });
+    expect(seen).toEqual([
+      ['POST', 'csrf-abc'],
+      ['PATCH', 'csrf-abc'],
+      ['PUT', 'csrf-abc'],
+    ]);
+  });
+
+  it('reports a 401 through onUnauthorized so the app can send the user to sign in', async () => {
+    const onUnauthorized = vi.fn();
+    const { service } = make(
+      () => reply(401, { error: { code: 'UNAUTHORIZED', message: 'Session expired' } }),
+      onUnauthorized,
+    );
+    expect(await service.list({}).catch((e) => e)).toMatchObject({ status: 401 });
+    expect(onUnauthorized).toHaveBeenCalledOnce();
   });
 
   it('uses POST / PATCH / PUT with JSON bodies on the documented routes', async () => {
@@ -130,7 +163,6 @@ describe('http adapter (verified with a fake fetch only; never run against a liv
   it('turns network failures and non-JSON errors into ApiError', async () => {
     const down = createHttpEmployeesService({
       baseUrl: 'http://x',
-      getToken: () => 't',
       fetchImpl: (() => Promise.reject(new TypeError('fail'))) as unknown as typeof fetch,
     });
     expect(await down.get(employee.id).catch((e) => e)).toMatchObject({

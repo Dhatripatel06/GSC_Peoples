@@ -1,15 +1,15 @@
-import { Router, type RequestHandler } from 'express';
+import { Router, type Response } from 'express';
 import { z } from 'zod';
 import { normalizeEmail } from '@gsc/shared';
 import type { PrismaClient } from '../../database/generated/client';
-import { ConflictError, UnauthorizedError, ValidationError } from '../../shared/errors';
+import { UnauthorizedError, ValidationError } from '../../shared/errors';
 import { env } from '../../config/env';
 import { hashPassword, secureToken, tokenHash, verifyPassword } from './password';
 
 const loginSchema = z.object({ email: z.email(), password: z.string().min(8).max(128), companyId: z.string().uuid().optional() });
 const resetRequestSchema = z.object({ email: z.email(), companyId: z.string().uuid().optional() });
-const resetSchema = z.object({ token: z.string().min(32), password: z.string().min(8).max(128) });
-const invitationSchema = z.object({ token: z.string().min(32), password: z.string().min(8).max(128), name: z.string().trim().min(1).max(200).optional() });
+const resetSchema = z.object({ token: z.string().min(32), password: z.string().min(10).max(128) }); // PRD AUTH-002: 10+ characters
+const invitationSchema = z.object({ token: z.string().min(32), password: z.string().min(10).max(128), name: z.string().trim().min(1).max(200).optional() });
 
 const failures = new Map<string, { count: number; resetAt: number }>();
 
@@ -28,18 +28,18 @@ function clearFailures(key: string) {
   failures.delete(key);
 }
 
-function setSessionCookies(res: import('express').Response, sessionToken: string, csrfToken: string) {
+function setSessionCookies(res: Response, sessionToken: string, csrfToken: string) {
   const secure = env.NODE_ENV === 'production';
   res.cookie('gsc_session', sessionToken, { httpOnly: true, secure, sameSite: 'lax', maxAge: 8 * 60 * 60 * 1000, path: '/' });
   res.cookie('gsc_csrf', csrfToken, { httpOnly: false, secure, sameSite: 'lax', maxAge: 8 * 60 * 60 * 1000, path: '/' });
 }
 
-function clearSessionCookies(res: import('express').Response) {
+function clearSessionCookies(res: Response) {
   res.clearCookie('gsc_session', { path: '/' });
   res.clearCookie('gsc_csrf', { path: '/' });
 }
 
-async function createSession(prisma: PrismaClient, userId: string, companyId: string, res: import('express').Response) {
+async function createSession(prisma: PrismaClient, userId: string, companyId: string, res: Response) {
   const sessionToken = secureToken();
   const csrfToken = secureToken();
   const now = new Date();

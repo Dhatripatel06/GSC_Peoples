@@ -33,3 +33,5 @@ Thumbs.db
 # local infra data
 infrastructure/**/data/
 .next-live/
+.next-live-testdb/
+.next-prod/

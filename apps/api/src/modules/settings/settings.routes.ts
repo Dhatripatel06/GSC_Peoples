@@ -40,7 +40,22 @@ async function appendAudit(prisma: PrismaClient, req: Parameters<RequestHandler>
 
 export function createSettingsRouter(prisma: PrismaClient): Router {
   const router = Router();
-  router.use(requireRole('SUPER_ADMIN'));
+  // Authorization policy (PRD AUTH-004/005/006, SET-001/002/004, W4). Not a router-wide Super Admin gate:
+  //  - Super Admin only: company profile, role changes, audit log.
+  //  - Super Admin or HR Admin: list accounts, invite / resend, activate / deactivate, with the HR limits
+  //    enforced inside the handlers (HR never touches Super Admin accounts and only creates Manager and
+  //    Employee logins; HR Admin and Super Admin logins are created by a Super Admin).
+  const superAdminOnly = requireRole('SUPER_ADMIN');
+  const superAdminOrHr = requireRole('SUPER_ADMIN', 'HR_ADMIN');
+  const isSuperAdmin = (req: Parameters<RequestHandler>[0]) => Boolean(req.user?.roles.includes('SUPER_ADMIN'));
+  const HR_MAY_INVITE = new Set(['MANAGER', 'EMPLOYEE']);
+  // Path-scoped gates (kept out of the route signatures so Express keeps typing req.params). The role
+  // route is gated first, so HR is refused there even though it may use the rest of /users.
+  router.use(superAdminOrHr); // default floor: any settings route added later is closed to Managers and Employees
+  router.use('/company', superAdminOnly);
+  router.use('/audit-logs', superAdminOnly);
+  router.use('/users/:membershipId/role', superAdminOnly);
+  router.use('/users', superAdminOrHr);
 
   router.get('/company', async (req, res) => {
     if (!req.user) throw new ForbiddenError();
@@ -106,6 +121,9 @@ export function createSettingsRouter(prisma: PrismaClient): Router {
     const email = normalizeEmail(parsed.data.email);
     const role = await prisma.role.findFirst({ where: { companyId: req.user.companyId, key: parsed.data.roleKey } });
     if (!role) throw new ConflictError('Role is not configured for this company');
+    if (!isSuperAdmin(req) && !HR_MAY_INVITE.has(parsed.data.roleKey)) {
+      throw new ForbiddenError('Only a Super Admin can invite HR Admin or Super Admin accounts');
+    }
 
     const result = await prisma.$transaction(async (tx) => {
       let user = await tx.user.findUnique({ where: { email } });
@@ -152,9 +170,12 @@ export function createSettingsRouter(prisma: PrismaClient): Router {
     if (!req.user) throw new ForbiddenError();
     const membership = await prisma.companyMembership.findFirst({
       where: { id: req.params.membershipId, companyId: req.user.companyId },
-      include: { user: true },
+      include: { user: true, role: true },
     });
     if (!membership) throw new ConflictError('Membership not found');
+    if (!isSuperAdmin(req) && !HR_MAY_INVITE.has(membership.role.key)) {
+      throw new ForbiddenError('Only a Super Admin can manage HR Admin or Super Admin invitations');
+    }
     if (membership.status === 'ACTIVE') throw new ConflictError('Only invited accounts can be invited');
 
     const result = await prisma.$transaction(async (tx) => {
@@ -206,6 +227,9 @@ export function createSettingsRouter(prisma: PrismaClient): Router {
       include: { user: true, role: true },
     });
     if (!membership) throw new ConflictError('Membership not found');
+    if (!isSuperAdmin(req) && membership.role.key === 'SUPER_ADMIN') {
+      throw new ForbiddenError('Only a Super Admin can change a Super Admin account');
+    }
 
     if (membership.role.key === 'SUPER_ADMIN' && parsed.data.status === 'DISABLED') {
       const superAdmins = await prisma.companyMembership.count({

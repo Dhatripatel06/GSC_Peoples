@@ -6,7 +6,9 @@ import { ForbiddenError } from '../../shared/errors';
 export function requireCsrf(prisma?: PrismaClient): RequestHandler {
   return async (req, _res, next) => {
     if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) return next();
-    if (req.header('authorization')) return next();
+    // Only requests actually authenticated by a bearer token are exempt. An Authorization header on a
+    // cookie-authenticated request must not switch CSRF off (browsers send the cookie automatically).
+    if (req.authMethod === 'bearer') return next();
 
     const csrfHeader = req.header('x-csrf-token');
     const cookies = req.headers.cookie
