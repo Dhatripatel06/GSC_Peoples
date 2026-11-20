@@ -36,3 +36,14 @@ export function findNavItem(pathname: string): SidebarItem | undefined {
     (i) => i.href && (pathname === i.href || pathname.startsWith(`${i.href}/`)),
   );
 }
+
+/** Pages that exist but have no sidebar entry (reached from the top bar). */
+const UNLISTED_TITLES: ReadonlyArray<readonly [string, string]> = [['/profile', 'My profile']];
+
+/** Top-bar title for a path: the sidebar label, else an unlisted page's title, else the product name. */
+export function titleFor(pathname: string): string {
+  const listed = findNavItem(pathname)?.label;
+  if (listed) return listed;
+  const unlisted = UNLISTED_TITLES.find(([href]) => pathname === href || pathname.startsWith(`${href}/`));
+  return unlisted?.[1] ?? 'GSC Peoples';
+}

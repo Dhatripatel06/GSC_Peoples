@@ -1,9 +1,12 @@
 'use client';
 
 import { Bell, Building2, ChevronDown, LogOut, Menu } from 'lucide-react';
+import Link from 'next/link';
 import { ThemeToggle } from '@/components/shared/theme-toggle';
 import { Avatar } from '@/components/ui/avatar';
 import { buttonVariants } from '@/components/ui/button';
+import { useCurrentUser } from '@/hooks/use-current-user';
+import { ROLE_LABELS } from '@/lib/role-labels';
 import { cn } from '@/lib/utils';
 import { PlaceholderMenu } from './placeholder-menu';
 
@@ -26,6 +29,8 @@ export function TopBar({
   onMenuClick,
   menuButtonRef,
 }: TopBarProps) {
+  const me = useCurrentUser();
+  const who = me ? `${me.displayName} · ${ROLE_LABELS[me.roleKey]}` : null;
   return (
     <header className="sticky top-0 z-10 flex h-14 items-center gap-2 border-b border-line bg-surface px-4 sm:gap-3 sm:px-6">
       {showMenuButton ? (
@@ -87,7 +92,14 @@ export function TopBar({
       >
         <LogOut className="size-[18px]" strokeWidth={1.75} aria-hidden />
       </button>
-      <Avatar name="Account" size="lg" />
+      <Link
+        href="/profile"
+        title={who ?? 'Your profile'}
+        aria-label={who ? `Your profile: ${who}` : 'Your profile'}
+        className="shrink-0 rounded-full"
+      >
+        <Avatar name={me?.displayName ?? 'Account'} size="lg" />
+      </Link>
     </header>
   );
 }

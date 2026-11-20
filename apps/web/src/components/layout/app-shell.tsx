@@ -3,7 +3,7 @@
 import { usePathname } from 'next/navigation';
 import { useId, useRef, useState, useSyncExternalStore } from 'react';
 import { ThemeToggle } from '@/components/shared/theme-toggle';
-import { NAV_SECTIONS, findNavItem } from '@/config/navigation';
+import { NAV_SECTIONS, findNavItem, titleFor } from '@/config/navigation';
 import { useShellMode } from '@/hooks/use-shell-mode';
 import {
   readSidebarCollapsed,
@@ -87,7 +87,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <div className="min-w-0 flex-1">
         <TopBar
-          title={active?.label ?? 'GSC Peoples'}
+          title={titleFor(pathname)}
           showMenuButton={mode === 'mobile'}
           menuOpen={menuOpen}
           menuControlsId={menuId}
